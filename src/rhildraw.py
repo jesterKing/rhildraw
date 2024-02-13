@@ -37,18 +37,15 @@ class LDrawFile:
         self.name = path.name
         self.suffix = path.suffix
         self.pname = f"{path.parent.name}\\{self.name}"
-
     def get_commands(self):
         if len(self.commands)==0:
             with self.path.open(encoding="utf-8") as f:
                 cmds = [l.strip() for l in f.readlines()]
                 cmds = [c for c in cmds if len(c) > 0]
                 self.commands = cmds
-
+    
         return self.commands
-
-
-class LegoMaterial:
+class LDrawMaterial:
     def __init__(self, props, extra = None):
         self.properties = props
         self.name = props["COLOUR"]
@@ -95,10 +92,12 @@ class LegoMaterial:
         self.render_material = pbr_rm
         sc.doc.RenderMaterials.Add(pbr_rm)
 
+
+
 # Globals
 vfiles: Mapping[str, LDrawFile]= dict()
 idefs : Mapping[str, InstanceDefinition]= dict()
-materials : Mapping[str, LegoMaterial]= dict()
+materials : Mapping[str, LDrawMaterial]= dict()
 vertidx = 0
 pbr_guid = ContentUuids.PhysicallyBasedMaterialType
 
@@ -228,30 +227,19 @@ def add_poly(m : Mesh, cmd : str, xforms : list):
     elif vertices == 3:
         m.Faces.AddFace(vertidx - 3, vertidx - 2, vertidx - 1)
 
-def get_part(part_name : str):
+def get_ldraw_file(part_name : str) -> LDrawFile:
     global vfiles
 
     part_name = part_name.replace('/', '\\')
 
     if part_name in vfiles:
-        return vfiles[part_name].get_commands()
+        return vfiles[part_name]
 
     raise Exception(f"Part file not found: {part_name}")
 
 
-def read_data(part):
-    if isinstance(part, Path):
-        with part.open(encoding="utf-8") as f:
-            cmds = [l.strip() for l in f.readlines()]
-            return cmds
-    elif isinstance(part, list):
-        return part
-
-def load_part(part, m : Mesh, xforms : list):
-    cmds = []
-    cmds = read_data(part)
-
-    cmds = [l for l in cmds if len(l)>0]
+def load_part(part : LDrawFile, m : Mesh, xforms : list):
+    cmds = part.get_commands()
     for cmd in cmds:
         if cmd.startswith('1'):
             d = cmd.split()
@@ -259,7 +247,7 @@ def load_part(part, m : Mesh, xforms : list):
             prt = ' '.join(d[14:])
             _xforms = [xform] + xforms[:]
             try:
-                part_file = get_part(prt)
+                part_file = get_ldraw_file(prt)
             except Exception:
                 print(f"\tERR: Failed getting part {prt}, skipping")
                 continue
@@ -283,9 +271,9 @@ def contains_poly_commands(cmds):
 
     return False
 
-def load_model_part(part, xforms : list):
+def load_model_part(part : LDrawFile, xforms : list):
     cmds = []
-    cmds = read_data(part)
+    cmds = part.get_commands()
 
     cmds = [l for l in cmds if len(l)>0]
     for cmd in cmds:
@@ -305,8 +293,8 @@ def load_model_part(part, xforms : list):
             obattr.RenderMaterial = rm
 
             if prt.lower().endswith(".ldr"):
-                ldr_file = get_part(prt)
-                if contains_poly_commands(ldr_file):
+                ldr_file = get_ldraw_file(prt)
+                if contains_poly_commands(ldr_file.get_commands()):
                     add_part(prt)
                     idef = update_idefs_dictionary(prt)
                     if idef != None:
@@ -322,7 +310,6 @@ def load_model_part(part, xforms : list):
                 if idef != None:
                     sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
                 else:
-                    #part = get_part(prt)
                     add_part(prt)
                     idef = update_idefs_dictionary(prt)
                     if idef != None:
@@ -359,7 +346,7 @@ def load_model(model : LDrawFile):
             else:
                 file_data.append(l)
         add_virtual_file(model.path, cur_file, file_data) # last file
-    start_part = get_part(first_file)
+    start_part = get_ldraw_file(first_file)
 
     load_model_part(start_part, [rhino_orient])
 
@@ -381,7 +368,8 @@ def add_part(part_name : str):
     obattr.Visible = True
     obattr.MaterialSource = ObjectMaterialSource.MaterialFromParent
 
-    load_part(get_part(part_name), mesh, [id_xform])
+    ldraw_file = get_ldraw_file(part_name)
+    load_part(ldraw_file, mesh, [id_xform])
     mesh.Normals.ComputeNormals()
     mesh.Compact()
 
@@ -394,8 +382,8 @@ def adjust_color_cmd(cmd):
     return cmd
 
 def load_colors():
-    colorldr = get_part("LDConfig.ldr")
-    cmds = read_data(colorldr)
+    colorldr = get_ldraw_file("LDConfig.ldr")
+    cmds = colorldr.get_commands()
     COLOR_CMD = "0 !COLOUR "
     TO_REMOVE = "0 !"
     for cmd in cmds:
@@ -412,7 +400,7 @@ def load_colors():
                 extra = None
             for i in range(0, keyvalue_count*2, 2):
                 properties[cmd_split[i]] = cmd_split[i+1]
-            lego_material = LegoMaterial(properties, extra)
+            lego_material = LDrawMaterial(properties, extra)
             materials[properties["CODE"]] = lego_material
     print("Colors read")
 

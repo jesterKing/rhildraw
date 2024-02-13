@@ -11,7 +11,7 @@ This program `rhildraw` is a simple importer of LDraw files. A model can be
 described by one or more files. We'll get to the details of these files as we go
 on our journey to implementing the importer.
 
-# Overview of the program
+## Overview of the program
 
 The following diagram shows the main structure of the script
 
@@ -55,11 +55,10 @@ Dictionaries for the follow data are used:
 
 ``` py : <<initialize global variables>>=
 
-<<LEGO material class>>
 # Globals
 vfiles: Mapping[str, LDrawFile]= dict()
 idefs : Mapping[str, InstanceDefinition]= dict()
-materials : Mapping[str, LegoMaterial]= dict()
+materials : Mapping[str, LDrawMaterial]= dict()
 vertidx = 0
 ```
 
@@ -67,7 +66,7 @@ vertidx = 0
 
 Colors
 
-#### LegoMaterial class
+#### LDrawMaterial class
 
 ``` py : <<initialize color definitions>>=
 
@@ -96,7 +95,7 @@ def load_colors():
 ```
 
 ``` py : <<create material and save to dictionary>>=
-lego_material = LegoMaterial(properties, extra)
+lego_material = LDrawMaterial(properties, extra)
 materials[properties["CODE"]] = lego_material
 ```
 
@@ -116,12 +115,12 @@ for i in range(0, keyvalue_count*2, 2):
 ```
 
 ``` py : <<load color commands>>=
-colorldr = get_part("LDConfig.ldr")
-cmds = read_data(colorldr)
+colorldr = get_ldraw_file("LDConfig.ldr")
+cmds = colorldr.get_commands()
 ```
 
-``` py : <<LEGO material class>>=
-class LegoMaterial:
+``` py : <<LDraw material class>>=
+class LDrawMaterial:
     def __init__(self, props, extra = None):
         self.properties = props
         self.name = props["COLOUR"]
@@ -174,7 +173,7 @@ class LegoMaterial:
 pbr_guid = ContentUuids.PhysicallyBasedMaterialType
 ```
 
-# Reading files
+## Reading files
 
 All LDraw files consist of lines where each line is of a certain line type. Each
 line type denotes a command. All LDraw files have these line types, so it is
@@ -188,6 +187,52 @@ However, the following are well-established conventions. The `.dat` file is used
 to define geometry of parts and subparts. The `.ldr` files often contain
 commands to load parts, they express assemblies or models. The `.mpd` is a form
 of multi-part document, where in one file several files are combined.
+
+In our script we represent LDraw files with the class `LDrawFile`. The class
+itself is very simple. It has only a method for
+`<<initialization of LDrawFile>>` and a method to `<<get commands from LDrawFile>>`.
+
+``` py : <<LDrawFile class>>=
+class LDrawFile:
+    <<initialization of LDrawFile>>
+    <<get commands from LDrawFile>>
+```
+
+Instantiation of an `LDrawFile` instance takes a required parameter `path`. From
+this `Path` instance the file name, suffix and filename with parent are
+extracted.
+
+If the contents of the file are known during instancing the data can be passed
+in as a list of strings.
+
+``` py : <<initialization of LDrawFile>>=
+def __init__(self, path : Path, data : List[str] = []):
+    self.commands = data
+    self.path = path
+    self.name = path.name
+    self.suffix = path.suffix
+    self.pname = f"{path.parent.name}\\{self.name}"
+```
+
+For most files the contents will not be known in advance. When retrieving the
+contents the file gets lazily loaded and the contents cached in case this
+particular file is used again in a model.
+
+Files are to be read in as UTF-8 files. At some point it would probably be good
+to perhaps support falling back to encodings of old files.
+
+Reading of the file also strips already out empty lines.
+
+``` py : <<get commands from LDrawFile>>=
+def get_commands(self):
+    if len(self.commands)==0:
+        with self.path.open(encoding="utf-8") as f:
+            cmds = [l.strip() for l in f.readlines()]
+            cmds = [c for c in cmds if len(c) > 0]
+            self.commands = cmds
+
+    return self.commands
+```
 
 
 ## Line types
@@ -204,7 +249,7 @@ should get us going.
 
 Line types 3 and 4 add polygon methods, triangles and quads respectively.
 
-# Adding polygons
+## Adding polygons
 
 Handling line types 3 and 4 means adding either a triangle or a quad. The form
 of line types 3 and 4 are similar. A line type three starts with the number `3`
@@ -278,12 +323,7 @@ def add_poly(m : Mesh, cmd : str, xforms : list):
     <<add face to mesh>>
 ```
 
-# Reading files and the LDraw library
-
-
-
-
-# TO BE WRITTEN AS LITERATE PROGRAM
+## TO BE WRITTEN AS LITERATE PROGRAM
 
 ``` py : <<the whole script.*>>= ./src/rhildraw.py $ template=pysrc.template
 import scriptcontext as sc
@@ -307,22 +347,8 @@ from System.IO import EnumerationOptions, SearchOption
 
 from pathlib import Path
 
-class LDrawFile:
-    def __init__(self, path : Path, data : List[str] = []):
-        self.commands = data
-        self.path = path
-        self.name = path.name
-        self.suffix = path.suffix
-        self.pname = f"{path.parent.name}\\{self.name}"
-
-    def get_commands(self):
-        if len(self.commands)==0:
-            with self.path.open(encoding="utf-8") as f:
-                cmds = [l.strip() for l in f.readlines()]
-                cmds = [c for c in cmds if len(c) > 0]
-                self.commands = cmds
-
-        return self.commands
+<<LDrawFile class>>
+<<LDraw material class>>
 
 <<initialize global variables>>
 
@@ -433,30 +459,19 @@ def collate_transforms(xforms):
 
 <<add polygon method>>
 
-def get_part(part_name : str):
+def get_ldraw_file(part_name : str) -> LDrawFile:
     global vfiles
 
     part_name = part_name.replace('/', '\\')
 
     if part_name in vfiles:
-        return vfiles[part_name].get_commands()
+        return vfiles[part_name]
 
     raise Exception(f"Part file not found: {part_name}")
 
 
-def read_data(part):
-    if isinstance(part, Path):
-        with part.open(encoding="utf-8") as f:
-            cmds = [l.strip() for l in f.readlines()]
-            return cmds
-    elif isinstance(part, list):
-        return part
-
-def load_part(part, m : Mesh, xforms : list):
-    cmds = []
-    cmds = read_data(part)
-
-    cmds = [l for l in cmds if len(l)>0]
+def load_part(part : LDrawFile, m : Mesh, xforms : list):
+    cmds = part.get_commands()
     for cmd in cmds:
         if cmd.startswith('1'):
             d = cmd.split()
@@ -464,7 +479,7 @@ def load_part(part, m : Mesh, xforms : list):
             prt = ' '.join(d[14:])
             _xforms = [xform] + xforms[:]
             try:
-                part_file = get_part(prt)
+                part_file = get_ldraw_file(prt)
             except Exception:
                 print(f"\tERR: Failed getting part {prt}, skipping")
                 continue
@@ -488,9 +503,9 @@ def contains_poly_commands(cmds):
 
     return False
 
-def load_model_part(part, xforms : list):
+def load_model_part(part : LDrawFile, xforms : list):
     cmds = []
-    cmds = read_data(part)
+    cmds = part.get_commands()
 
     cmds = [l for l in cmds if len(l)>0]
     for cmd in cmds:
@@ -510,8 +525,8 @@ def load_model_part(part, xforms : list):
             obattr.RenderMaterial = rm
 
             if prt.lower().endswith(".ldr"):
-                ldr_file = get_part(prt)
-                if contains_poly_commands(ldr_file):
+                ldr_file = get_ldraw_file(prt)
+                if contains_poly_commands(ldr_file.get_commands()):
                     add_part(prt)
                     idef = update_idefs_dictionary(prt)
                     if idef != None:
@@ -527,7 +542,6 @@ def load_model_part(part, xforms : list):
                 if idef != None:
                     sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
                 else:
-                    #part = get_part(prt)
                     add_part(prt)
                     idef = update_idefs_dictionary(prt)
                     if idef != None:
@@ -564,7 +578,7 @@ def load_model(model : LDrawFile):
             else:
                 file_data.append(l)
         add_virtual_file(model.path, cur_file, file_data) # last file
-    start_part = get_part(first_file)
+    start_part = get_ldraw_file(first_file)
 
     load_model_part(start_part, [rhino_orient])
 
@@ -586,7 +600,8 @@ def add_part(part_name : str):
     obattr.Visible = True
     obattr.MaterialSource = ObjectMaterialSource.MaterialFromParent
 
-    load_part(get_part(part_name), mesh, [id_xform])
+    ldraw_file = get_ldraw_file(part_name)
+    load_part(ldraw_file, mesh, [id_xform])
     mesh.Normals.ComputeNormals()
     mesh.Compact()
 

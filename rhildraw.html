@@ -18,7 +18,7 @@ creating LEGO models on computers.</p>
 <p>This program <code>rhildraw</code> is a simple importer of LDraw files. A model can be
 described by one or more files. We'll get to the details of these files as we go
 on our journey to implementing the importer.</p>
-<h1>Overview of the program</h1>
+<h2>Overview of the program</h2>
 <p>The following diagram shows the main structure of the script</p>
 <pre class="mermaid">
 flowchart TD
@@ -59,18 +59,17 @@ actually needed.</li>
 <div class="fragmentname">&lt;&lt;initialize global variables&gt;&gt;= </div>
 <div class="code">
 <pre><code>
-<span class="literate-tag-name">&lt;&lt;LEGO material class&gt;&gt;</span>
 
 vfiles: Mapping[<span class="hljs-built_in">str</span>, LDrawFile]= <span class="hljs-built_in">dict</span>()
 idefs : Mapping[<span class="hljs-built_in">str</span>, InstanceDefinition]= <span class="hljs-built_in">dict</span>()
-materials : Mapping[<span class="hljs-built_in">str</span>, LegoMaterial]= <span class="hljs-built_in">dict</span>()
+materials : Mapping[<span class="hljs-built_in">str</span>, LDrawMaterial]= <span class="hljs-built_in">dict</span>()
 vertidx = <span class="hljs-number">0</span>
 </code></pre>
 
 </div>
 </div><h3>Reading color definitions</h3>
 <p>Colors</p>
-<h4>LegoMaterial class</h4>
+<h4>LDrawMaterial class</h4>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;initialize color definitions&gt;&gt;= </div>
 <div class="code">
@@ -109,7 +108,7 @@ vertidx = <span class="hljs-number">0</span>
 </div><div class="codefragment">
 <div class="fragmentname">&lt;&lt;create material and save to dictionary&gt;&gt;= </div>
 <div class="code">
-<pre><code>lego_material = LegoMaterial(properties, extra)
+<pre><code>lego_material = LDrawMaterial(properties, extra)
 materials[properties[<span class="hljs-string">&quot;CODE&quot;</span>]] = lego_material
 </code></pre>
 
@@ -135,15 +134,15 @@ extra = <span class="hljs-built_in">len</span>(cmd_split) % <span class="hljs-nu
 </div><div class="codefragment">
 <div class="fragmentname">&lt;&lt;load color commands&gt;&gt;= </div>
 <div class="code">
-<pre><code>colorldr = get_part(<span class="hljs-string">&quot;LDConfig.ldr&quot;</span>)
-cmds = read_data(colorldr)
+<pre><code>colorldr = get_ldraw_file(<span class="hljs-string">&quot;LDConfig.ldr&quot;</span>)
+cmds = colorldr.get_commands()
 </code></pre>
 
 </div>
 </div><div class="codefragment">
-<div class="fragmentname">&lt;&lt;LEGO material class&gt;&gt;= </div>
+<div class="fragmentname">&lt;&lt;LDraw material class&gt;&gt;= </div>
 <div class="code">
-<pre><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">LegoMaterial</span>:
+<pre><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">LDrawMaterial</span>:
     <span class="hljs-keyword">def</span> <span class="hljs-title function_">__init__</span>(<span class="hljs-params">self, props, extra = <span class="hljs-literal">None</span></span>):
         self.properties = props
         self.name = props[<span class="hljs-string">&quot;COLOUR&quot;</span>]
@@ -200,7 +199,7 @@ cmds = read_data(colorldr)
 </code></pre>
 
 </div>
-</div><h1>Reading files</h1>
+</div><h2>Reading files</h2>
 <p>All LDraw files consist of lines where each line is of a certain line type. Each
 line type denotes a command. All LDraw files have these line types, so it is
 easy to parse them.</p>
@@ -211,7 +210,56 @@ doesn't really matter.</p>
 to define geometry of parts and subparts. The <code>.ldr</code> files often contain
 commands to load parts, they express assemblies or models. The <code>.mpd</code> is a form
 of multi-part document, where in one file several files are combined.</p>
-<h2>Line types</h2>
+<p>In our script we represent LDraw files with the class <code>LDrawFile</code>. The class
+itself is very simple. It has only a method for
+<code>&lt;&lt;initialization of LDrawFile&gt;&gt;</code> and a method to <code>&lt;&lt;get commands from LDrawFile&gt;&gt;</code>.</p>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;LDrawFile class&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">LDrawFile</span>:
+    <span class="literate-tag-name">&lt;&lt;initialization of LDrawFile&gt;&gt;</span>
+    <span class="literate-tag-name">&lt;&lt;get commands from LDrawFile&gt;&gt;</span>
+</code></pre>
+
+</div>
+</div><p>Instantiation of an <code>LDrawFile</code> instance takes a required parameter <code>path</code>. From
+this <code>Path</code> instance the file name, suffix and filename with parent are
+extracted.</p>
+<p>If the contents of the file are known during instancing the data can be passed
+in as a list of strings.</p>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;initialization of LDrawFile&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">__init__</span>(<span class="hljs-params">self, path : Path, data : <span class="hljs-type">List</span>[<span class="hljs-built_in">str</span>] = []</span>):
+    self.commands = data
+    self.path = path
+    self.name = path.name
+    self.suffix = path.suffix
+    self.pname = <span class="hljs-string">f&quot;<span class="hljs-subst">{path.parent.name}</span>\\<span class="hljs-subst">{self.name}</span>&quot;</span>
+</code></pre>
+
+</div>
+</div><p>For most files the contents will not be known in advance. When retrieving the
+contents the file gets lazily loaded and the contents cached in case this
+particular file is used again in a model.</p>
+<p>Files are to be read in as UTF-8 files. At some point it would probably be good
+to perhaps support falling back to encodings of old files.</p>
+<p>Reading of the file also strips already out empty lines.</p>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;get commands from LDrawFile&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">get_commands</span>(<span class="hljs-params">self</span>):
+    <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(self.commands)==<span class="hljs-number">0</span>:
+        <span class="hljs-keyword">with</span> self.path.<span class="hljs-built_in">open</span>(encoding=<span class="hljs-string">&quot;utf-8&quot;</span>) <span class="hljs-keyword">as</span> f:
+            cmds = [l.strip() <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> f.readlines()]
+            cmds = [c <span class="hljs-keyword">for</span> c <span class="hljs-keyword">in</span> cmds <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(c) &gt; <span class="hljs-number">0</span>]
+            self.commands = cmds
+
+    <span class="hljs-keyword">return</span> self.commands
+</code></pre>
+
+</div>
+</div><h2>Line types</h2>
 <p>The heart of the LDraw specification revolves around line types. The
 specification essentially is a collection of lines whereby the first character
 of the line tells us what kind of operation has to happen.</p>
@@ -221,7 +269,7 @@ definition language. Eventually we may want to include also 2 and 5 lines, but
 for just importing complete models for set dressing and rendering purposes this
 should get us going.</p>
 <p>Line types 3 and 4 add polygon methods, triangles and quads respectively.</p>
-<h1>Adding polygons</h1>
+<h2>Adding polygons</h2>
 <p>Handling line types 3 and 4 means adding either a triangle or a quad. The form
 of line types 3 and 4 are similar. A line type three starts with the number <code>3</code>
 followed by a color code and three triplets of values that are either integers
@@ -300,8 +348,7 @@ we first <code>&lt;&lt;parse vertex count&gt;&gt;</code> and <code>&lt;&lt;parse
 </code></pre>
 
 </div>
-</div><h1>Reading files and the LDraw library</h1>
-<h1>TO BE WRITTEN AS LITERATE PROGRAM</h1>
+</div><h2>TO BE WRITTEN AS LITERATE PROGRAM</h2>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;the whole script.*&gt;&gt;= ./src/rhildraw.py $</div>
 <div class="code">
@@ -326,22 +373,8 @@ rhmath = Rhino.RhinoMath
 
 <span class="hljs-keyword">from</span> pathlib <span class="hljs-keyword">import</span> Path
 
-<span class="hljs-keyword">class</span> <span class="hljs-title class_">LDrawFile</span>:
-    <span class="hljs-keyword">def</span> <span class="hljs-title function_">__init__</span>(<span class="hljs-params">self, path : Path, data : <span class="hljs-type">List</span>[<span class="hljs-built_in">str</span>] = []</span>):
-        self.commands = data
-        self.path = path
-        self.name = path.name
-        self.suffix = path.suffix
-        self.pname = <span class="hljs-string">f&quot;<span class="hljs-subst">{path.parent.name}</span>\\<span class="hljs-subst">{self.name}</span>&quot;</span>
-
-    <span class="hljs-keyword">def</span> <span class="hljs-title function_">get_commands</span>(<span class="hljs-params">self</span>):
-        <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(self.commands)==<span class="hljs-number">0</span>:
-            <span class="hljs-keyword">with</span> self.path.<span class="hljs-built_in">open</span>(encoding=<span class="hljs-string">&quot;utf-8&quot;</span>) <span class="hljs-keyword">as</span> f:
-                cmds = [l.strip() <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> f.readlines()]
-                cmds = [c <span class="hljs-keyword">for</span> c <span class="hljs-keyword">in</span> cmds <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(c) &gt; <span class="hljs-number">0</span>]
-                self.commands = cmds
-
-        <span class="hljs-keyword">return</span> self.commands
+<span class="literate-tag-name">&lt;&lt;LDrawFile class&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;LDraw material class&gt;&gt;</span>
 
 <span class="literate-tag-name">&lt;&lt;initialize global variables&gt;&gt;</span>
 
@@ -452,30 +485,19 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
 
 <span class="literate-tag-name">&lt;&lt;add polygon method&gt;&gt;</span>
 
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">get_part</span>(<span class="hljs-params">part_name : <span class="hljs-built_in">str</span></span>):
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">get_ldraw_file</span>(<span class="hljs-params">part_name : <span class="hljs-built_in">str</span></span>) -&gt; LDrawFile:
     <span class="hljs-keyword">global</span> vfiles
 
     part_name = part_name.replace(<span class="hljs-string">&#x27;/&#x27;</span>, <span class="hljs-string">&#x27;\\&#x27;</span>)
 
     <span class="hljs-keyword">if</span> part_name <span class="hljs-keyword">in</span> vfiles:
-        <span class="hljs-keyword">return</span> vfiles[part_name].get_commands()
+        <span class="hljs-keyword">return</span> vfiles[part_name]
 
     <span class="hljs-keyword">raise</span> Exception(<span class="hljs-string">f&quot;Part file not found: <span class="hljs-subst">{part_name}</span>&quot;</span>)
 
 
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">read_data</span>(<span class="hljs-params">part</span>):
-    <span class="hljs-keyword">if</span> <span class="hljs-built_in">isinstance</span>(part, Path):
-        <span class="hljs-keyword">with</span> part.<span class="hljs-built_in">open</span>(encoding=<span class="hljs-string">&quot;utf-8&quot;</span>) <span class="hljs-keyword">as</span> f:
-            cmds = [l.strip() <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> f.readlines()]
-            <span class="hljs-keyword">return</span> cmds
-    <span class="hljs-keyword">elif</span> <span class="hljs-built_in">isinstance</span>(part, <span class="hljs-built_in">list</span>):
-        <span class="hljs-keyword">return</span> part
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_part</span>(<span class="hljs-params">part, m : Mesh, xforms : <span class="hljs-built_in">list</span></span>):
-    cmds = []
-    cmds = read_data(part)
-
-    cmds = [l <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> cmds <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(l)&gt;<span class="hljs-number">0</span>]
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_part</span>(<span class="hljs-params">part : LDrawFile, m : Mesh, xforms : <span class="hljs-built_in">list</span></span>):
+    cmds = part.get_commands()
     <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
         <span class="hljs-keyword">if</span> cmd.startswith(<span class="hljs-string">&#x27;1&#x27;</span>):
             d = cmd.split()
@@ -483,7 +505,7 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
             prt = <span class="hljs-string">&#x27; &#x27;</span>.join(d[<span class="hljs-number">14</span>:])
             _xforms = [xform] + xforms[:]
             <span class="hljs-keyword">try</span>:
-                part_file = get_part(prt)
+                part_file = get_ldraw_file(prt)
             <span class="hljs-keyword">except</span> Exception:
                 <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;\tERR: Failed getting part <span class="hljs-subst">{prt}</span>, skipping&quot;</span>)
                 <span class="hljs-keyword">continue</span>
@@ -507,9 +529,9 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
 
     <span class="hljs-keyword">return</span> <span class="hljs-literal">False</span>
 
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_model_part</span>(<span class="hljs-params">part, xforms : <span class="hljs-built_in">list</span></span>):
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_model_part</span>(<span class="hljs-params">part : LDrawFile, xforms : <span class="hljs-built_in">list</span></span>):
     cmds = []
-    cmds = read_data(part)
+    cmds = part.get_commands()
 
     cmds = [l <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> cmds <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(l)&gt;<span class="hljs-number">0</span>]
     <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
@@ -529,8 +551,8 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
             obattr.RenderMaterial = rm
 
             <span class="hljs-keyword">if</span> prt.lower().endswith(<span class="hljs-string">&quot;.ldr&quot;</span>):
-                ldr_file = get_part(prt)
-                <span class="hljs-keyword">if</span> contains_poly_commands(ldr_file):
+                ldr_file = get_ldraw_file(prt)
+                <span class="hljs-keyword">if</span> contains_poly_commands(ldr_file.get_commands()):
                     add_part(prt)
                     idef = update_idefs_dictionary(prt)
                     <span class="hljs-keyword">if</span> idef != <span class="hljs-literal">None</span>:
@@ -546,7 +568,6 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
                 <span class="hljs-keyword">if</span> idef != <span class="hljs-literal">None</span>:
                     sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
                 <span class="hljs-keyword">else</span>:
-                    
                     add_part(prt)
                     idef = update_idefs_dictionary(prt)
                     <span class="hljs-keyword">if</span> idef != <span class="hljs-literal">None</span>:
@@ -583,7 +604,7 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
             <span class="hljs-keyword">else</span>:
                 file_data.append(l)
         add_virtual_file(model.path, cur_file, file_data) 
-    start_part = get_part(first_file)
+    start_part = get_ldraw_file(first_file)
 
     load_model_part(start_part, [rhino_orient])
 
@@ -605,7 +626,8 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
     obattr.Visible = <span class="hljs-literal">True</span>
     obattr.MaterialSource = ObjectMaterialSource.MaterialFromParent
 
-    load_part(get_part(part_name), mesh, [id_xform])
+    ldraw_file = get_ldraw_file(part_name)
+    load_part(ldraw_file, mesh, [id_xform])
     mesh.Normals.ComputeNormals()
     mesh.Compact()
 
