@@ -68,29 +68,34 @@ vertidx = <span class="hljs-number">0</span>
 
 </div>
 </div><h3>Reading color definitions</h3>
-<p>Colors</p>
-<h4>LDrawMaterial class</h4>
+<p>Colors are defined just like parts and assemblies. Line type 0 is used through
+the Colour Definition Language Extension
+(<a href="https://www.ldraw.org/article/299">specification</a>).</p>
+<p>For this script we'll be using the colors defined in <code>LDConfig.ldr</code> from the
+LDraw complete library, although there are alternatives available. Technically
+the file with standard color definitions contains the following line in its
+header:</p>
+<p><code>0 !LDRAW_ORG Configuration UPDATE YYYY-MM-DD</code></p>
+<p>But we'll forgo this check and just assume the file we specify is the correct
+file.</p>
+<p>Preparing the colors means preparing color data for materials so that is what
+we'll be doing.</p>
+<p>We need just one simple method to set up the <code>materials</code> dictionary that will
+contain all the defined colors, and that is the <code>&lt;&lt;method to load colors&gt;&gt;</code>.</p>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;initialize color definitions&gt;&gt;= </div>
 <div class="code">
-<pre><code>
-<span class="literate-tag-name">&lt;&lt;method to adjust color command&gt;&gt;</span>
-
-<span class="literate-tag-name">&lt;&lt;method to load colors&gt;&gt;</span>
+<pre><code><span class="literate-tag-name">&lt;&lt;method to load colors&gt;&gt;</span>
 </code></pre>
 
 </div>
-</div><div class="codefragment">
-<div class="fragmentname">&lt;&lt;method to adjust color command&gt;&gt;= </div>
-<div class="code">
-<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">adjust_color_cmd</span>(<span class="hljs-params">cmd</span>):
-    cmd = cmd.replace(<span class="hljs-string">&quot;MATERIAL GLITTER&quot;</span>, <span class="hljs-string">&quot;MATERIAL_GLITTER&quot;</span>)
-    cmd = cmd.replace(<span class="hljs-string">&quot;MATERIAL SPECKLE&quot;</span>, <span class="hljs-string">&quot;MATERIAL_SPECKLE&quot;</span>)
-    <span class="hljs-keyword">return</span> cmd
-</code></pre>
-
-</div>
-</div><div class="codefragment">
+</div><p>To load the colors we just need to get the <code>LDrawFile</code> instance for
+<code>LDConfig.ldr</code> and pull out the commands. Then we loop over all the commands and
+handle those that start with the required <code>0 !COLOUR</code> string. Again we assume
+that a command is well-formed. For each color command we
+<code>&lt;&lt;read color properties from command&gt;&gt;</code>, create an instance of <code>LDrawMaterial</code>
+and add it to the <code>materials</code> dictionary.</p>
+<div class="codefragment">
 <div class="fragmentname">&lt;&lt;method to load colors&gt;&gt;= </div>
 <div class="code">
 <pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">load_colors</span>():
@@ -105,33 +110,9 @@ vertidx = <span class="hljs-number">0</span>
 </code></pre>
 
 </div>
-</div><div class="codefragment">
-<div class="fragmentname">&lt;&lt;create material and save to dictionary&gt;&gt;= </div>
-<div class="code">
-<pre><code>lego_material = LDrawMaterial(properties, extra)
-materials[properties[<span class="hljs-string">&quot;CODE&quot;</span>]] = lego_material
-</code></pre>
-
-</div>
-</div><div class="codefragment">
-<div class="fragmentname">&lt;&lt;read color properties from command&gt;&gt;= </div>
-<div class="code">
-<pre><code>properties = <span class="hljs-built_in">dict</span>()
-cmd = cmd[<span class="hljs-built_in">len</span>(TO_REMOVE):]
-cmd = adjust_color_cmd(cmd)
-cmd_split = cmd.split()
-keyvalue_count = <span class="hljs-built_in">len</span>(cmd_split) // <span class="hljs-number">2</span>
-extra = <span class="hljs-built_in">len</span>(cmd_split) % <span class="hljs-number">2</span>
-<span class="hljs-keyword">if</span> extra == <span class="hljs-number">1</span>:
-    extra = cmd_split[-<span class="hljs-number">1</span>]
-<span class="hljs-keyword">else</span>:
-    extra = <span class="hljs-literal">None</span>
-<span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">0</span>, keyvalue_count*<span class="hljs-number">2</span>, <span class="hljs-number">2</span>):
-    properties[cmd_split[i]] = cmd_split[i+<span class="hljs-number">1</span>]
-</code></pre>
-
-</div>
-</div><div class="codefragment">
+</div><p>To <code>&lt;&lt;load color commands&gt;&gt;</code> we simple get the <code>LDrawFile</code> instance for
+<code>LDConfig.ldr</code> and use <code>get_commands()</code> on that.</p>
+<div class="codefragment">
 <div class="fragmentname">&lt;&lt;load color commands&gt;&gt;= </div>
 <div class="code">
 <pre><code>colorldr = get_ldraw_file(<span class="hljs-string">&quot;LDConfig.ldr&quot;</span>)
@@ -139,14 +120,47 @@ cmds = colorldr.get_commands()
 </code></pre>
 
 </div>
-</div><div class="codefragment">
+</div><p>Then for each line we clean up the part we're not using (<code>0 !</code>). Most keys have
+values, but for finishes there is a little snag. Most of the finishes, <code>CHROME</code>,
+<code>PEARLESCENT</code>, <code>RUBBER</code>, <code>MATTE_METALLIC</code> and <code>METAL</code> when specified make this
+an odd list. To even that out we will add a <code>dummy</code> value to the list, so we can
+simple iterate over the list in pairs and generate a dictionary out of it.
+Eventually we'll be able to properly handle finishes. Perhaps <code>MATERIAL SPECKLE</code>
+and <code>MATERIAL GLITTER</code> with the use of some good procedural texturing.</p>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;read color properties from command&gt;&gt;= </div>
+<div class="code">
+<pre><code>properties = <span class="hljs-built_in">dict</span>()
+cmd = cmd[<span class="hljs-built_in">len</span>(TO_REMOVE):]
+cmd_split = cmd.split()
+<span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(cmd_split) % <span class="hljs-number">2</span> == <span class="hljs-number">1</span>:
+    cmd_split.append(<span class="hljs-string">&#x27;dummy&#x27;</span>)
+keyvalue_count = <span class="hljs-built_in">len</span>(cmd_split) // <span class="hljs-number">2</span>
+<span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">0</span>, keyvalue_count*<span class="hljs-number">2</span>, <span class="hljs-number">2</span>):
+    properties[cmd_split[i]] = cmd_split[i+<span class="hljs-number">1</span>]
+</code></pre>
+
+</div>
+</div><p>With the properties now converted to a dictionary we can instantiate an
+<code>LDrawMaterial</code> and add it to the main <code>materials</code> dictionary with the <code>CODE</code>
+value as key. This key we can later use during handling of other commands that
+specify a key code to find the correct entry.</p>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;create material and save to dictionary&gt;&gt;= </div>
+<div class="code">
+<pre><code>ldraw_material = LDrawMaterial(properties)
+materials[properties[<span class="hljs-string">&quot;CODE&quot;</span>]] = ldraw_material
+</code></pre>
+
+</div>
+</div><h3>LDrawMaterial class</h3>
+<div class="codefragment">
 <div class="fragmentname">&lt;&lt;LDraw material class&gt;&gt;= </div>
 <div class="code">
 <pre><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">LDrawMaterial</span>:
-    <span class="hljs-keyword">def</span> <span class="hljs-title function_">__init__</span>(<span class="hljs-params">self, props, extra = <span class="hljs-literal">None</span></span>):
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">__init__</span>(<span class="hljs-params">self, props</span>):
         self.properties = props
         self.name = props[<span class="hljs-string">&quot;COLOUR&quot;</span>]
-        self.extra = extra
         self.render_material = <span class="hljs-literal">None</span>
 
     <span class="hljs-keyword">def</span> <span class="hljs-title function_">_get_color4f</span>(<span class="hljs-params">self, colstr</span>):
@@ -172,18 +186,28 @@ cmds = colorldr.get_commands()
                 self.render_material = rm
                 <span class="hljs-keyword">return</span>
         pbr_rm = RenderContentType.NewContentFromTypeId(pbr_guid)
-        _basecolor = self._get_color4f(self.properties[<span class="hljs-string">&quot;VALUE&quot;</span>])
-        pbr_rm.SetParameter(PbrNames.BaseColor, _basecolor)
 
+        _basecolor = self._get_color4f(self.properties[<span class="hljs-string">&quot;VALUE&quot;</span>])
+
+        _roughness = <span class="hljs-number">0.2</span>
+        _metallic = <span class="hljs-number">0.0</span>
         _opacity = <span class="hljs-number">1.0</span>
+
         <span class="hljs-keyword">if</span> <span class="hljs-string">&quot;ALPHA&quot;</span> <span class="hljs-keyword">in</span> self.properties:
             _opacity = self._alpha(self.properties[<span class="hljs-string">&quot;ALPHA&quot;</span>])
-        pbr_rm.SetParameter(PbrNames.Opacity, _opacity)
+            _roughness = <span class="hljs-number">0.03</span>
 
-        _metallic = <span class="hljs-number">0.0</span>
-        <span class="hljs-keyword">if</span> self.extra <span class="hljs-keyword">in</span> (<span class="hljs-string">&quot;METAL&quot;</span>, <span class="hljs-string">&quot;CHROME&quot;</span>):
+        <span class="hljs-keyword">if</span> <span class="hljs-string">&quot;METAL&quot;</span> <span class="hljs-keyword">in</span> self.properties <span class="hljs-keyword">or</span> <span class="hljs-string">&quot;CHROME&quot;</span> <span class="hljs-keyword">in</span> self.properties:
             _metallic = <span class="hljs-number">1.0</span>
+            _roughness = <span class="hljs-number">0.03</span>
+        <span class="hljs-keyword">if</span> <span class="hljs-string">&quot;MATTE_METALLIC&quot;</span> <span class="hljs-keyword">in</span> self.properties:
+            _metallic = <span class="hljs-number">1.0</span>
+            _roughness = <span class="hljs-number">0.3</span>
+
+        pbr_rm.SetParameter(PbrNames.BaseColor, _basecolor)
+        pbr_rm.SetParameter(PbrNames.Opacity, _opacity)
         pbr_rm.SetParameter(PbrNames.Metallic, _metallic)
+        pbr_rm.SetParameter(PbrNames.Roughness, _roughness)
 
         pbr_rm.Name = self.name
         self.render_material = pbr_rm
@@ -212,7 +236,8 @@ commands to load parts, they express assemblies or models. The <code>.mpd</code>
 of multi-part document, where in one file several files are combined.</p>
 <p>In our script we represent LDraw files with the class <code>LDrawFile</code>. The class
 itself is very simple. It has only a method for
-<code>&lt;&lt;initialization of LDrawFile&gt;&gt;</code> and a method to <code>&lt;&lt;get commands from LDrawFile&gt;&gt;</code>.</p>
+<code>&lt;&lt;initialization of LDrawFile&gt;&gt;</code> and a method to
+<code>&lt;&lt;get commands from LDrawFile&gt;&gt;</code>.</p>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;LDrawFile class&gt;&gt;= </div>
 <div class="code">

@@ -46,10 +46,9 @@ class LDrawFile:
     
         return self.commands
 class LDrawMaterial:
-    def __init__(self, props, extra = None):
+    def __init__(self, props):
         self.properties = props
         self.name = props["COLOUR"]
-        self.extra = extra
         self.render_material = None
 
     def _get_color4f(self, colstr):
@@ -75,18 +74,28 @@ class LDrawMaterial:
                 self.render_material = rm
                 return
         pbr_rm = RenderContentType.NewContentFromTypeId(pbr_guid)
-        _basecolor = self._get_color4f(self.properties["VALUE"])
-        pbr_rm.SetParameter(PbrNames.BaseColor, _basecolor)
 
+        _basecolor = self._get_color4f(self.properties["VALUE"])
+
+        _roughness = 0.2
+        _metallic = 0.0
         _opacity = 1.0
+
         if "ALPHA" in self.properties:
             _opacity = self._alpha(self.properties["ALPHA"])
-        pbr_rm.SetParameter(PbrNames.Opacity, _opacity)
+            _roughness = 0.03
 
-        _metallic = 0.0
-        if self.extra in ("METAL", "CHROME"):
+        if "METAL" in self.properties or "CHROME" in self.properties:
             _metallic = 1.0
+            _roughness = 0.03
+        if "MATTE_METALLIC" in self.properties:
+            _metallic = 1.0
+            _roughness = 0.3
+
+        pbr_rm.SetParameter(PbrNames.BaseColor, _basecolor)
+        pbr_rm.SetParameter(PbrNames.Opacity, _opacity)
         pbr_rm.SetParameter(PbrNames.Metallic, _metallic)
+        pbr_rm.SetParameter(PbrNames.Roughness, _roughness)
 
         pbr_rm.Name = self.name
         self.render_material = pbr_rm
@@ -375,12 +384,6 @@ def add_part(part_name : str):
 
     if mesh.Vertices.Count > 0 and mesh.Faces.Count > 0:
         sc.doc.InstanceDefinitions.Add(obattr.Name, "", Point3f.Origin, mesh, obattr)
-
-def adjust_color_cmd(cmd):
-    cmd = cmd.replace("MATERIAL GLITTER", "MATERIAL_GLITTER")
-    cmd = cmd.replace("MATERIAL SPECKLE", "MATERIAL_SPECKLE")
-    return cmd
-
 def load_colors():
     colorldr = get_ldraw_file("LDConfig.ldr")
     cmds = colorldr.get_commands()
@@ -390,18 +393,14 @@ def load_colors():
         if cmd.startswith(COLOR_CMD):
             properties = dict()
             cmd = cmd[len(TO_REMOVE):]
-            cmd = adjust_color_cmd(cmd)
             cmd_split = cmd.split()
+            if len(cmd_split) % 2 == 1:
+                cmd_split.append('dummy')
             keyvalue_count = len(cmd_split) // 2
-            extra = len(cmd_split) % 2
-            if extra == 1:
-                extra = cmd_split[-1]
-            else:
-                extra = None
             for i in range(0, keyvalue_count*2, 2):
                 properties[cmd_split[i]] = cmd_split[i+1]
-            lego_material = LDrawMaterial(properties, extra)
-            materials[properties["CODE"]] = lego_material
+            ldraw_material = LDrawMaterial(properties)
+            materials[properties["CODE"]] = ldraw_material
     print("Colors read")
 
 """
