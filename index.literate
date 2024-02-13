@@ -1,0 +1,10 @@
+# LDraw importer for Rhino 3D
+
+Script for importing LDraw files into Rhino 3D.
+
+* [LDraw for Rhino](literate/rhildraw.html)
+
+
+``` SETTINGS
+authors=Nathan 'jesterKing' Letwory
+```
