@@ -637,12 +637,11 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
 <span class="hljs-keyword">def</span> <span class="hljs-title function_">add_part</span>(<span class="hljs-params">part_name : <span class="hljs-built_in">str</span></span>):
     <span class="hljs-keyword">global</span> vertidx
     vertidx = <span class="hljs-number">0</span>
-    
     name = clean_name(part_name)
 
     existing_idef = sc.doc.InstanceDefinitions.Find(name)
     <span class="hljs-keyword">if</span> existing_idef:
-        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;\tSkipping <span class="hljs-subst">{part_name}</span>&quot;</span>)
+        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;\tSkipping <span class="hljs-subst">{part_name}</span>, instance already created&quot;</span>)
         <span class="hljs-keyword">return</span>
     mesh = Mesh()
     obattr = ObjectAttributes()
@@ -659,32 +658,6 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
     <span class="hljs-keyword">if</span> mesh.Vertices.Count &gt; <span class="hljs-number">0</span> <span class="hljs-keyword">and</span> mesh.Faces.Count &gt; <span class="hljs-number">0</span>:
         sc.doc.InstanceDefinitions.Add(obattr.Name, <span class="hljs-string">&quot;&quot;</span>, Point3f.Origin, mesh, obattr)
 <span class="literate-tag-name">&lt;&lt;initialize color definitions&gt;&gt;</span>
-
-<span class="hljs-string">&quot;&quot;&quot;
-def find_part_names():
-    global parts_folder_name
-    parts_folder = DirectoryInfo(parts_folder_name)
-    part_files = parts_folder.EnumerateFiles(&quot;*.dat&quot;, SearchOption.TopDirectoryOnly)
-    part_names = [pf.Name for pf in part_files]
-    return part_names
-
-def load_all_parts_as_idefs():
-    fns = find_part_names()
-    goforit = fns
-    print(f&quot;Loading {len(goforit)} parts&quot;)
-
-    total = len(goforit)
-    counter = 1
-    for prt in goforit:
-        print(f&quot;{counter}/{total} : {prt}&quot;)
-        add_part(prt)
-        refresh()
-        counter = counter + 1
-
-parts_folder_name = &quot;/Users/jesterking/Documents/brickdat/ldraw/parts&quot;
-#parts_folder_name = &quot;e:/dev/brickdat/ldraw/parts&quot;
-#load_all_parts_as_idefs()
-&quot;&quot;&quot;</span>
 
 sc.doc.Views.EnableRedraw(<span class="hljs-literal">False</span>, <span class="hljs-literal">False</span>, <span class="hljs-literal">False</span>)
 
@@ -718,6 +691,7 @@ load_colors()
 
 
 fl : Path = vfiles[<span class="hljs-string">&quot;10252-1.mpd&quot;</span>]
+fl : Path = vfiles[<span class="hljs-string">&quot;885-1.mpd&quot;</span>]
 load_model(fl)
 
 refresh()

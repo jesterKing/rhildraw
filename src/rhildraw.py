@@ -363,12 +363,11 @@ def load_model(model : LDrawFile):
 def add_part(part_name : str):
     global vertidx
     vertidx = 0
-    #print(f"Loading {part_name}")
     name = clean_name(part_name)
 
     existing_idef = sc.doc.InstanceDefinitions.Find(name)
     if existing_idef:
-        print(f"\tSkipping {part_name}")
+        print(f"\tSkipping {part_name}, instance already created")
         return
     mesh = Mesh()
     obattr = ObjectAttributes()
@@ -403,32 +402,6 @@ def load_colors():
             materials[properties["CODE"]] = ldraw_material
     print("Colors read")
 
-"""
-def find_part_names():
-    global parts_folder_name
-    parts_folder = DirectoryInfo(parts_folder_name)
-    part_files = parts_folder.EnumerateFiles("*.dat", SearchOption.TopDirectoryOnly)
-    part_names = [pf.Name for pf in part_files]
-    return part_names
-
-def load_all_parts_as_idefs():
-    fns = find_part_names()
-    goforit = fns
-    print(f"Loading {len(goforit)} parts")
-
-    total = len(goforit)
-    counter = 1
-    for prt in goforit:
-        print(f"{counter}/{total} : {prt}")
-        add_part(prt)
-        refresh()
-        counter = counter + 1
-
-parts_folder_name = "/Users/jesterking/Documents/brickdat/ldraw/parts"
-#parts_folder_name = "e:/dev/brickdat/ldraw/parts"
-#load_all_parts_as_idefs()
-"""
-
 sc.doc.Views.EnableRedraw(False, False, False)
 
 ###########################################
@@ -461,6 +434,7 @@ load_colors()
 ## file name (including extension)
 ###########################################
 fl : Path = vfiles["10252-1.mpd"]
+fl : Path = vfiles["885-1.mpd"]
 load_model(fl)
 
 refresh()
