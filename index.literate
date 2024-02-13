@@ -6,5 +6,6 @@ Script for importing LDraw files into Rhino 3D.
 
 
 ``` SETTINGS
+template=rhildrawhtml.template
 authors=Nathan 'jesterKing' Letwory
 ```
