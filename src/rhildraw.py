@@ -12,11 +12,14 @@
 import scriptcontext as sc
 import math
 
+from typing import Mapping, List
+
 import Rhino
 
 from Rhino.Geometry import Transform, Mesh, Vector3f, Point3f
 from Rhino.Display import Color4f
 from Rhino.DocObjects import ObjectAttributes, ObjectMaterialSource
+from Rhino.DocObjects import InstanceDefinition
 from Rhino.Render import ChildSlotNames, ContentUuids, RenderContentType
 
 PbrNames = ChildSlotNames.PhysicallyBased
@@ -27,12 +30,77 @@ from System.IO import EnumerationOptions, SearchOption
 
 from pathlib import Path
 
+class LDrawFile:
+    def __init__(self, path : Path, data : List[str] = []):
+        self.commands = data
+        self.path = path
+        self.name = path.name
+        self.suffix = path.suffix
+        self.pname = f"{path.parent.name}\\{self.name}"
+
+    def get_commands(self):
+        if len(self.commands)==0:
+            with self.path.open(encoding="utf-8") as f:
+                cmds = [l.strip() for l in f.readlines()]
+                cmds = [c for c in cmds if len(c) > 0]
+                self.commands = cmds
+
+        return self.commands
+
+
+class LegoMaterial:
+    def __init__(self, props, extra = None):
+        self.properties = props
+        self.name = props["COLOUR"]
+        self.extra = extra
+        self.render_material = None
+
+    def _get_color4f(self, colstr):
+        colstr = colstr[1:]
+        r = int(colstr[0:2], 16) / 255.0
+        g = int(colstr[2:4], 16) / 255.0
+        b = int(colstr[4:6], 16) / 255.0
+        return Color4f(r, g, b, 1.0)
+
+    def _alpha(self, alphastr):
+        alpha = 1.0 - (float(alphastr) / 255.0)
+        return alpha
+
+    def get_render_material(self):
+        if self.render_material == None:
+
+            raise Exception(f"Material non-existant: {self.name}")
+        return self.render_material
+
+    def create_render_material(self):
+        for rm in sc.doc.RenderMaterials:
+            if rm.Name == self.name:
+                self.render_material = rm
+                return
+        pbr_rm = RenderContentType.NewContentFromTypeId(pbr_guid)
+        _basecolor = self._get_color4f(self.properties["VALUE"])
+        pbr_rm.SetParameter(PbrNames.BaseColor, _basecolor)
+
+        _opacity = 1.0
+        if "ALPHA" in self.properties:
+            _opacity = self._alpha(self.properties["ALPHA"])
+        pbr_rm.SetParameter(PbrNames.Opacity, _opacity)
+
+        _metallic = 0.0
+        if self.extra in ("METAL", "CHROME"):
+            _metallic = 1.0
+        pbr_rm.SetParameter(PbrNames.Metallic, _metallic)
+
+        pbr_rm.Name = self.name
+        self.render_material = pbr_rm
+        sc.doc.RenderMaterials.Add(pbr_rm)
+
 # Globals
-parts = dict()
-idefs = dict()
-ldr_parts = dict() # virtual files from .mpd
-materials = dict()
+vfiles: Mapping[str, LDrawFile]= dict()
+idefs : Mapping[str, InstanceDefinition]= dict()
+materials : Mapping[str, LegoMaterial]= dict()
 vertidx = 0
+pbr_guid = ContentUuids.PhysicallyBasedMaterialType
 
 def refresh():
     sc.doc.Views.Redraw()
@@ -105,15 +173,15 @@ def clean_name(part_name):
     return part_name
 
 def prepare_parts_dictionary():
-    lib_path = "/Users/jesterking/Documents/brickdat/ldraw"
-    #lib_path = "e:/dev/brickdat/ldraw"
+    global lib_path
     library_path : Path = Path(lib_path)
     library_path_net : DirectoryInfo = DirectoryInfo(lib_path)
     all_parts_net = library_path_net.EnumerateFiles("*", SearchOption.AllDirectories)
     for p in all_parts_net:
         fn = Path(p.FullName)
-        parts[p.Name] = fn
-        parts[f"{fn.parent.name}\\{p.Name}"] = fn
+        ldrawfile = LDrawFile(fn)
+        vfiles[ldrawfile.name] = ldrawfile
+        vfiles[ldrawfile.pname] = ldrawfile
 
 def prepare_idefs_dictionary():
     for idef in sc.doc.InstanceDefinitions:
@@ -161,15 +229,12 @@ def add_poly(m : Mesh, cmd : str, xforms : list):
         m.Faces.AddFace(vertidx - 3, vertidx - 2, vertidx - 1)
 
 def get_part(part_name : str):
-    global parts, ldr_parts
+    global vfiles
 
     part_name = part_name.replace('/', '\\')
 
-    if part_name in parts:
-        return parts[part_name]
-
-    if part_name in ldr_parts:
-        return ldr_parts[part_name]
+    if part_name in vfiles:
+        return vfiles[part_name].get_commands()
 
     raise Exception(f"Part file not found: {part_name}")
 
@@ -267,10 +332,15 @@ def load_model_part(part, xforms : list):
 
             refresh()
 
+def add_virtual_file(model : Path, filename : str, data : List[str]):
+    virtual_file_path = model.parent / 'virtual' / filename
+    virtual_file = LDrawFile(virtual_file_path, data)
+    vfiles[virtual_file.name] = virtual_file
+    vfiles[virtual_file.pname] = virtual_file
 
-def load_model(model : Path):
-    with model.open(encoding="utf-8") as f:
-        lines = [l.strip() for l in f.readlines()]
+
+def load_model(model : LDrawFile):
+    lines = model.get_commands()
 
     FILE_START = '0 FILE '
     first_file = ''
@@ -281,26 +351,17 @@ def load_model(model : Path):
         for l in lines:
             if l.startswith(FILE_START):
                 if cur_file != '':
-                    ldr_parts[cur_file] = file_data
+                    add_virtual_file(model.path, cur_file, file_data)
                 if cur_file == '':
                     first_file = l[len(FILE_START):]
-
                 cur_file = l[len(FILE_START):]
                 file_data = [l]
             else:
                 file_data.append(l)
-        ldr_parts[cur_file] = file_data # last file
+        add_virtual_file(model.path, cur_file, file_data) # last file
     start_part = get_part(first_file)
 
     load_model_part(start_part, [rhino_orient])
-
-def find_part_names():
-    parts_folder_name = "/Users/jesterking/Documents/brickdat/ldraw/parts"
-    #parts_folder_name = "e:/dev/brickdat/ldraw/parts"
-    parts_folder = DirectoryInfo(parts_folder_name)
-    part_files = parts_folder.EnumerateFiles("*.dat", SearchOption.TopDirectoryOnly)
-    part_names = [pf.Name for pf in part_files]
-    return part_names
 
 
 def add_part(part_name : str):
@@ -332,56 +393,6 @@ def adjust_color_cmd(cmd):
     cmd = cmd.replace("MATERIAL SPECKLE", "MATERIAL_SPECKLE")
     return cmd
 
-pbr_guid = ContentUuids.PhysicallyBasedMaterialType
-
-class LegoMaterial:
-    def __init__(self, props, extra = None):
-        self.properties = props
-        self.name = props["COLOUR"]
-        self.extra = extra
-        self.render_material = None
-
-    def _get_color4f(self, colstr):
-        colstr = colstr[1:]
-        r = int(colstr[0:2], 16) / 255.0
-        g = int(colstr[2:4], 16) / 255.0
-        b = int(colstr[4:6], 16) / 255.0
-        return Color4f(r, g, b, 1.0)
-
-    def _alpha(self, alphastr):
-        alpha = 1.0 - (float(alphastr) / 255.0)
-        return alpha
-
-    def get_render_material(self):
-        if self.render_material == None:
-
-            raise Exception(f"Material non-existant: {self.name}")
-        return self.render_material
-
-    def create_render_material(self):
-        for rm in sc.doc.RenderMaterials:
-            if rm.Name == self.name:
-                self.render_material = rm
-                return
-        pbr_rm = RenderContentType.NewContentFromTypeId(pbr_guid)
-        _basecolor = self._get_color4f(self.properties["VALUE"])
-        pbr_rm.SetParameter(PbrNames.BaseColor, _basecolor)
-
-        _opacity = 1.0
-        if "ALPHA" in self.properties:
-            _opacity = self._alpha(self.properties["ALPHA"])
-        pbr_rm.SetParameter(PbrNames.Opacity, _opacity)
-
-        _metallic = 0.0
-        if self.extra in ("METAL", "CHROME"):
-            _metallic = 1.0
-        pbr_rm.SetParameter(PbrNames.Metallic, _metallic)
-
-        pbr_rm.Name = self.name
-        self.render_material = pbr_rm
-        sc.doc.RenderMaterials.Add(pbr_rm)
-
-
 def load_colors():
     colorldr = get_part("LDConfig.ldr")
     cmds = read_data(colorldr)
@@ -405,6 +416,13 @@ def load_colors():
             materials[properties["CODE"]] = lego_material
     print("Colors read")
 
+"""
+def find_part_names():
+    global parts_folder_name
+    parts_folder = DirectoryInfo(parts_folder_name)
+    part_files = parts_folder.EnumerateFiles("*.dat", SearchOption.TopDirectoryOnly)
+    part_names = [pf.Name for pf in part_files]
+    return part_names
 
 def load_all_parts_as_idefs():
     fns = find_part_names()
@@ -419,36 +437,52 @@ def load_all_parts_as_idefs():
         refresh()
         counter = counter + 1
 
+parts_folder_name = "/Users/jesterking/Documents/brickdat/ldraw/parts"
+#parts_folder_name = "e:/dev/brickdat/ldraw/parts"
 #load_all_parts_as_idefs()
+"""
 
 sc.doc.Views.EnableRedraw(False, False, False)
+
+###########################################
+## Set path to where your LDraw library and
+## model files are. They should be under
+## the same main folder
+## Use always forward slashes, also for
+## folders on Windows
+###########################################
+lib_path = "/Users/jesterking/Documents/brickdat/ldraw"
+#lib_path = "e:/dev/brickdat/ldraw"
 
 prepare_parts_dictionary()
 prepare_idefs_dictionary()
 load_colors()
 
-fl : Path = parts["885-1.mpd"]
-#fl : Path = parts["8836-1.mpd"]
-#fl : Path = parts["10019-1.mpd"]
-#fl : Path = parts["10030-1.mpd"]
-#fl : Path = parts["10143-1.mpd"]
-#fl : Path = parts["10252-1.mpd"]
-#fl : Path = parts["mytester.mpd"]
-#fl : Path = parts["75969-1.mpd"]
-#fl : Path = parts["31048-1.mpd"]
-#fl : Path = parts["3063-1.mpd"]
-#fl : Path = parts["42064-1.mpd"]
+#fl : Path = vfiles["885-1.mpd"]
+#fl : Path = vfiles["8836-1.mpd"]
+#fl : Path = vfiles["10019-1.mpd"]
+#fl : Path = vfiles["10030-1.mpd"]
+#fl : Path = vfiles["10143-1.mpd"]
+#fl : Path = vfiles["75969-1.mpd"]
+#fl : Path = vfiles["31048-1.mpd"]
+#fl : Path = vfiles["3063-1.mpd"]
+#fl : Path = vfiles["42064-1.mpd"]
+
+
+###########################################
+## Specify what model to load. Use just the
+## file name (including extension)
+###########################################
+fl : Path = vfiles["10252-1.mpd"]
 load_model(fl)
 
 refresh()
 
 sc.doc.Views.EnableRedraw(True, True, True)
 
+Rhino.RhinoApp.RunScript("ZEA", False)
+
 print("Done")
-
-
-#print(f"Read {len(goforit)} parts")
-
 
 
 

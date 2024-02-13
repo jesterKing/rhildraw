@@ -16,28 +16,202 @@
 by James Jessiman in 1995. Since then this has become a defacto standard for
 creating LEGO models on computers.</p>
 <p>This program <code>rhildraw</code> is a simple importer of LDraw files. A model can be
-described by one or more files. These files can have the extensions <code>.mpd</code>,
-<code>.ldr</code> and <code>.dat</code>. These extensions are typically used for files with specific
-usage. The <code>.dat</code> file is used to define geometry of parts and subparts. The
-<code>.ldr</code> files often contain commands to load parts. And <code>.mpd</code> is a form of
-multi-part document, where in one file several files are combined.</p>
-<p>We'll get to the details of these files as we go on our journey to implementing
-the importer.</p>
+described by one or more files. We'll get to the details of these files as we go
+on our journey to implementing the importer.</p>
+<h1>Overview of the program</h1>
+<p>The following diagram shows the main structure of the script</p>
 <pre class="mermaid">
-sequenceDiagram
-    Alice->>John: Hello John, how are you?
-    John-->>Alice: Great!
-    Alice-)John: See you later!
-
-</pre><pre class="mermaid">
 flowchart TD
-    A[Start] --> B{Is it?}
-    B -->|Yes| C[OK]
-    C --> D[Rethink]
-    D --> B
-    B ---->|No| E[End]
+    subgraph init
+    A[[Initialization]]
+    B[Read file]
+    end
+    subgraph geom [Read Module]
+    direction LR
+    C[[Handle commands]]
+    D[[Add part geometry]]
+    E[[Create block definition]]
+    end
+    A --> B
+    B --> geom
+    C --> D
+    D --> C
+    D --> E
 
-</pre><h1>Line types</h1>
+</pre><h2>Initialization</h2>
+<p>We will be using a couple of dictionaries to keep track of files, materials and
+so on. These will make finding data easier as the command to import another file
+uses the file name as the key either without or with a parent folder prepended.</p>
+<p>Dictionaries for the follow data are used:</p>
+<ul>
+<li><code>vfiles</code>: dictionary to file representations. Each file will be represented
+twice. Once with just the file name and once with parent folder prepended
+<code>parent/file.dat</code></li>
+<li><code>idefs</code>: dictionary holding all block definitions. The block definiton name is
+the key. Block definition names are part file names without the extension. The
+block definitions are the values. The corresponding <code>RhinoCommon</code> class is
+<code>InstanceDefinition</code>.</li>
+<li><code>materials</code>: dictionary containing LEGO colors as <code>RenderMaterial</code>s. The color
+code is the key. Colors are materialized as <code>RenderMaterial</code> only when
+actually needed.</li>
+</ul>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;initialize global variables&gt;&gt;= </div>
+<div class="code">
+<pre><code>
+<span class="literate-tag-name">&lt;&lt;LEGO material class&gt;&gt;</span>
+
+vfiles: Mapping[<span class="hljs-built_in">str</span>, LDrawFile]= <span class="hljs-built_in">dict</span>()
+idefs : Mapping[<span class="hljs-built_in">str</span>, InstanceDefinition]= <span class="hljs-built_in">dict</span>()
+materials : Mapping[<span class="hljs-built_in">str</span>, LegoMaterial]= <span class="hljs-built_in">dict</span>()
+vertidx = <span class="hljs-number">0</span>
+</code></pre>
+
+</div>
+</div><h3>Reading color definitions</h3>
+<p>Colors</p>
+<h4>LegoMaterial class</h4>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;initialize color definitions&gt;&gt;= </div>
+<div class="code">
+<pre><code>
+<span class="literate-tag-name">&lt;&lt;method to adjust color command&gt;&gt;</span>
+
+<span class="literate-tag-name">&lt;&lt;method to load colors&gt;&gt;</span>
+</code></pre>
+
+</div>
+</div><div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to adjust color command&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">adjust_color_cmd</span>(<span class="hljs-params">cmd</span>):
+    cmd = cmd.replace(<span class="hljs-string">&quot;MATERIAL GLITTER&quot;</span>, <span class="hljs-string">&quot;MATERIAL_GLITTER&quot;</span>)
+    cmd = cmd.replace(<span class="hljs-string">&quot;MATERIAL SPECKLE&quot;</span>, <span class="hljs-string">&quot;MATERIAL_SPECKLE&quot;</span>)
+    <span class="hljs-keyword">return</span> cmd
+</code></pre>
+
+</div>
+</div><div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to load colors&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">load_colors</span>():
+    <span class="literate-tag-name">&lt;&lt;load color commands&gt;&gt;</span>
+    COLOR_CMD = <span class="hljs-string">&quot;0 !COLOUR &quot;</span>
+    TO_REMOVE = <span class="hljs-string">&quot;0 !&quot;</span>
+    <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
+        <span class="hljs-keyword">if</span> cmd.startswith(COLOR_CMD):
+            <span class="literate-tag-name">&lt;&lt;read color properties from command&gt;&gt;</span>
+            <span class="literate-tag-name">&lt;&lt;create material and save to dictionary&gt;&gt;</span>
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;Colors read&quot;</span>)
+</code></pre>
+
+</div>
+</div><div class="codefragment">
+<div class="fragmentname">&lt;&lt;create material and save to dictionary&gt;&gt;= </div>
+<div class="code">
+<pre><code>lego_material = LegoMaterial(properties, extra)
+materials[properties[<span class="hljs-string">&quot;CODE&quot;</span>]] = lego_material
+</code></pre>
+
+</div>
+</div><div class="codefragment">
+<div class="fragmentname">&lt;&lt;read color properties from command&gt;&gt;= </div>
+<div class="code">
+<pre><code>properties = <span class="hljs-built_in">dict</span>()
+cmd = cmd[<span class="hljs-built_in">len</span>(TO_REMOVE):]
+cmd = adjust_color_cmd(cmd)
+cmd_split = cmd.split()
+keyvalue_count = <span class="hljs-built_in">len</span>(cmd_split) // <span class="hljs-number">2</span>
+extra = <span class="hljs-built_in">len</span>(cmd_split) % <span class="hljs-number">2</span>
+<span class="hljs-keyword">if</span> extra == <span class="hljs-number">1</span>:
+    extra = cmd_split[-<span class="hljs-number">1</span>]
+<span class="hljs-keyword">else</span>:
+    extra = <span class="hljs-literal">None</span>
+<span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">0</span>, keyvalue_count*<span class="hljs-number">2</span>, <span class="hljs-number">2</span>):
+    properties[cmd_split[i]] = cmd_split[i+<span class="hljs-number">1</span>]
+</code></pre>
+
+</div>
+</div><div class="codefragment">
+<div class="fragmentname">&lt;&lt;load color commands&gt;&gt;= </div>
+<div class="code">
+<pre><code>colorldr = get_part(<span class="hljs-string">&quot;LDConfig.ldr&quot;</span>)
+cmds = read_data(colorldr)
+</code></pre>
+
+</div>
+</div><div class="codefragment">
+<div class="fragmentname">&lt;&lt;LEGO material class&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">LegoMaterial</span>:
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">__init__</span>(<span class="hljs-params">self, props, extra = <span class="hljs-literal">None</span></span>):
+        self.properties = props
+        self.name = props[<span class="hljs-string">&quot;COLOUR&quot;</span>]
+        self.extra = extra
+        self.render_material = <span class="hljs-literal">None</span>
+
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">_get_color4f</span>(<span class="hljs-params">self, colstr</span>):
+        colstr = colstr[<span class="hljs-number">1</span>:]
+        r = <span class="hljs-built_in">int</span>(colstr[<span class="hljs-number">0</span>:<span class="hljs-number">2</span>], <span class="hljs-number">16</span>) / <span class="hljs-number">255.0</span>
+        g = <span class="hljs-built_in">int</span>(colstr[<span class="hljs-number">2</span>:<span class="hljs-number">4</span>], <span class="hljs-number">16</span>) / <span class="hljs-number">255.0</span>
+        b = <span class="hljs-built_in">int</span>(colstr[<span class="hljs-number">4</span>:<span class="hljs-number">6</span>], <span class="hljs-number">16</span>) / <span class="hljs-number">255.0</span>
+        <span class="hljs-keyword">return</span> Color4f(r, g, b, <span class="hljs-number">1.0</span>)
+
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">_alpha</span>(<span class="hljs-params">self, alphastr</span>):
+        alpha = <span class="hljs-number">1.0</span> - (<span class="hljs-built_in">float</span>(alphastr) / <span class="hljs-number">255.0</span>)
+        <span class="hljs-keyword">return</span> alpha
+
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">get_render_material</span>(<span class="hljs-params">self</span>):
+        <span class="hljs-keyword">if</span> self.render_material == <span class="hljs-literal">None</span>:
+
+            <span class="hljs-keyword">raise</span> Exception(<span class="hljs-string">f&quot;Material non-existant: <span class="hljs-subst">{self.name}</span>&quot;</span>)
+        <span class="hljs-keyword">return</span> self.render_material
+
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">create_render_material</span>(<span class="hljs-params">self</span>):
+        <span class="hljs-keyword">for</span> rm <span class="hljs-keyword">in</span> sc.doc.RenderMaterials:
+            <span class="hljs-keyword">if</span> rm.Name == self.name:
+                self.render_material = rm
+                <span class="hljs-keyword">return</span>
+        pbr_rm = RenderContentType.NewContentFromTypeId(pbr_guid)
+        _basecolor = self._get_color4f(self.properties[<span class="hljs-string">&quot;VALUE&quot;</span>])
+        pbr_rm.SetParameter(PbrNames.BaseColor, _basecolor)
+
+        _opacity = <span class="hljs-number">1.0</span>
+        <span class="hljs-keyword">if</span> <span class="hljs-string">&quot;ALPHA&quot;</span> <span class="hljs-keyword">in</span> self.properties:
+            _opacity = self._alpha(self.properties[<span class="hljs-string">&quot;ALPHA&quot;</span>])
+        pbr_rm.SetParameter(PbrNames.Opacity, _opacity)
+
+        _metallic = <span class="hljs-number">0.0</span>
+        <span class="hljs-keyword">if</span> self.extra <span class="hljs-keyword">in</span> (<span class="hljs-string">&quot;METAL&quot;</span>, <span class="hljs-string">&quot;CHROME&quot;</span>):
+            _metallic = <span class="hljs-number">1.0</span>
+        pbr_rm.SetParameter(PbrNames.Metallic, _metallic)
+
+        pbr_rm.Name = self.name
+        self.render_material = pbr_rm
+        sc.doc.RenderMaterials.Add(pbr_rm)
+
+</code></pre>
+
+</div>
+</div><div class="codefragment">
+<div class="fragmentname">&lt;&lt;initialize global variables&gt;&gt;=+ </div>
+<div class="code">
+<pre><code>pbr_guid = ContentUuids.PhysicallyBasedMaterialType
+</code></pre>
+
+</div>
+</div><h1>Reading files</h1>
+<p>All LDraw files consist of lines where each line is of a certain line type. Each
+line type denotes a command. All LDraw files have these line types, so it is
+easy to parse them.</p>
+<p>LDraw files have the extenions <code>.mpd</code>, <code>.ldr</code> and <code>.dat</code>. These extensions are
+typically used for files with specific usage although from just the contents it
+doesn't really matter.</p>
+<p>However, the following are well-established conventions. The <code>.dat</code> file is used
+to define geometry of parts and subparts. The <code>.ldr</code> files often contain
+commands to load parts, they express assemblies or models. The <code>.mpd</code> is a form
+of multi-part document, where in one file several files are combined.</p>
+<h2>Line types</h2>
 <p>The heart of the LDraw specification revolves around line types. The
 specification essentially is a collection of lines whereby the first character
 of the line tells us what kind of operation has to happen.</p>
@@ -48,9 +222,16 @@ for just importing complete models for set dressing and rendering purposes this
 should get us going.</p>
 <p>Line types 3 and 4 add polygon methods, triangles and quads respectively.</p>
 <h1>Adding polygons</h1>
-<p>Handling line types 3 and 4 means adding either a triangle or a quad. The form of line types 3 and 4 are similar. A line type three starts with the number <code>3</code> followed by a color code and three triplets of values that are either integers or floating point. For both line types we ignore the color code as we'll be using the color codes defined on line type 1 commands. But we'll get into that later.</p>
-<p>The line type four has a similar format, starting with number <code>4</code>, the color code and then <em>four</em> triplets of values.</p>
-<p>From the start number we parse how many triplets - vertices we'll be handling. This is the first character of the command string.</p>
+<p>Handling line types 3 and 4 means adding either a triangle or a quad. The form
+of line types 3 and 4 are similar. A line type three starts with the number <code>3</code>
+followed by a color code and three triplets of values that are either integers
+or floating point. For both line types we ignore the color code as we'll be
+using the color codes defined on line type 1 commands. But we'll get into that
+later.</p>
+<p>The line type four has a similar format, starting with number <code>4</code>, the color
+code and then <em>four</em> triplets of values.</p>
+<p>From the start number we parse how many triplets - vertices we'll be handling.
+This is the first character of the command string.</p>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;parse vertex count&gt;&gt;= </div>
 <div class="code">
@@ -119,18 +300,22 @@ we first <code>&lt;&lt;parse vertex count&gt;&gt;</code> and <code>&lt;&lt;parse
 </code></pre>
 
 </div>
-</div><h1>TO BE WRITTEN AS LITERATE PROGRAM</h1>
+</div><h1>Reading files and the LDraw library</h1>
+<h1>TO BE WRITTEN AS LITERATE PROGRAM</h1>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;the whole script.*&gt;&gt;= ./src/rhildraw.py $</div>
 <div class="code">
 <pre><code><span class="hljs-keyword">import</span> scriptcontext <span class="hljs-keyword">as</span> sc
 <span class="hljs-keyword">import</span> math
 
+<span class="hljs-keyword">from</span> typing <span class="hljs-keyword">import</span> Mapping, <span class="hljs-type">List</span>
+
 <span class="hljs-keyword">import</span> Rhino
 
 <span class="hljs-keyword">from</span> Rhino.Geometry <span class="hljs-keyword">import</span> Transform, Mesh, Vector3f, Point3f
 <span class="hljs-keyword">from</span> Rhino.Display <span class="hljs-keyword">import</span> Color4f
 <span class="hljs-keyword">from</span> Rhino.DocObjects <span class="hljs-keyword">import</span> ObjectAttributes, ObjectMaterialSource
+<span class="hljs-keyword">from</span> Rhino.DocObjects <span class="hljs-keyword">import</span> InstanceDefinition
 <span class="hljs-keyword">from</span> Rhino.Render <span class="hljs-keyword">import</span> ChildSlotNames, ContentUuids, RenderContentType
 
 PbrNames = ChildSlotNames.PhysicallyBased
@@ -141,12 +326,24 @@ rhmath = Rhino.RhinoMath
 
 <span class="hljs-keyword">from</span> pathlib <span class="hljs-keyword">import</span> Path
 
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">LDrawFile</span>:
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">__init__</span>(<span class="hljs-params">self, path : Path, data : <span class="hljs-type">List</span>[<span class="hljs-built_in">str</span>] = []</span>):
+        self.commands = data
+        self.path = path
+        self.name = path.name
+        self.suffix = path.suffix
+        self.pname = <span class="hljs-string">f&quot;<span class="hljs-subst">{path.parent.name}</span>\\<span class="hljs-subst">{self.name}</span>&quot;</span>
 
-parts = <span class="hljs-built_in">dict</span>()
-idefs = <span class="hljs-built_in">dict</span>()
-ldr_parts = <span class="hljs-built_in">dict</span>() 
-materials = <span class="hljs-built_in">dict</span>()
-vertidx = <span class="hljs-number">0</span>
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">get_commands</span>(<span class="hljs-params">self</span>):
+        <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(self.commands)==<span class="hljs-number">0</span>:
+            <span class="hljs-keyword">with</span> self.path.<span class="hljs-built_in">open</span>(encoding=<span class="hljs-string">&quot;utf-8&quot;</span>) <span class="hljs-keyword">as</span> f:
+                cmds = [l.strip() <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> f.readlines()]
+                cmds = [c <span class="hljs-keyword">for</span> c <span class="hljs-keyword">in</span> cmds <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(c) &gt; <span class="hljs-number">0</span>]
+                self.commands = cmds
+
+        <span class="hljs-keyword">return</span> self.commands
+
+<span class="literate-tag-name">&lt;&lt;initialize global variables&gt;&gt;</span>
 
 <span class="hljs-keyword">def</span> <span class="hljs-title function_">refresh</span>():
     sc.doc.Views.Redraw()
@@ -219,15 +416,15 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
     <span class="hljs-keyword">return</span> part_name
 
 <span class="hljs-keyword">def</span> <span class="hljs-title function_">prepare_parts_dictionary</span>():
-    lib_path = <span class="hljs-string">&quot;/Users/jesterking/Documents/brickdat/ldraw&quot;</span>
-    
+    <span class="hljs-keyword">global</span> lib_path
     library_path : Path = Path(lib_path)
     library_path_net : DirectoryInfo = DirectoryInfo(lib_path)
     all_parts_net = library_path_net.EnumerateFiles(<span class="hljs-string">&quot;*&quot;</span>, SearchOption.AllDirectories)
     <span class="hljs-keyword">for</span> p <span class="hljs-keyword">in</span> all_parts_net:
         fn = Path(p.FullName)
-        parts[p.Name] = fn
-        parts[<span class="hljs-string">f&quot;<span class="hljs-subst">{fn.parent.name}</span>\\<span class="hljs-subst">{p.Name}</span>&quot;</span>] = fn
+        ldrawfile = LDrawFile(fn)
+        vfiles[ldrawfile.name] = ldrawfile
+        vfiles[ldrawfile.pname] = ldrawfile
 
 <span class="hljs-keyword">def</span> <span class="hljs-title function_">prepare_idefs_dictionary</span>():
     <span class="hljs-keyword">for</span> idef <span class="hljs-keyword">in</span> sc.doc.InstanceDefinitions:
@@ -256,15 +453,12 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
 <span class="literate-tag-name">&lt;&lt;add polygon method&gt;&gt;</span>
 
 <span class="hljs-keyword">def</span> <span class="hljs-title function_">get_part</span>(<span class="hljs-params">part_name : <span class="hljs-built_in">str</span></span>):
-    <span class="hljs-keyword">global</span> parts, ldr_parts
+    <span class="hljs-keyword">global</span> vfiles
 
     part_name = part_name.replace(<span class="hljs-string">&#x27;/&#x27;</span>, <span class="hljs-string">&#x27;\\&#x27;</span>)
 
-    <span class="hljs-keyword">if</span> part_name <span class="hljs-keyword">in</span> parts:
-        <span class="hljs-keyword">return</span> parts[part_name]
-
-    <span class="hljs-keyword">if</span> part_name <span class="hljs-keyword">in</span> ldr_parts:
-        <span class="hljs-keyword">return</span> ldr_parts[part_name]
+    <span class="hljs-keyword">if</span> part_name <span class="hljs-keyword">in</span> vfiles:
+        <span class="hljs-keyword">return</span> vfiles[part_name].get_commands()
 
     <span class="hljs-keyword">raise</span> Exception(<span class="hljs-string">f&quot;Part file not found: <span class="hljs-subst">{part_name}</span>&quot;</span>)
 
@@ -362,10 +556,15 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
 
             refresh()
 
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">add_virtual_file</span>(<span class="hljs-params">model : Path, filename : <span class="hljs-built_in">str</span>, data : <span class="hljs-type">List</span>[<span class="hljs-built_in">str</span>]</span>):
+    virtual_file_path = model.parent / <span class="hljs-string">&#x27;virtual&#x27;</span> / filename
+    virtual_file = LDrawFile(virtual_file_path, data)
+    vfiles[virtual_file.name] = virtual_file
+    vfiles[virtual_file.pname] = virtual_file
 
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_model</span>(<span class="hljs-params">model : Path</span>):
-    <span class="hljs-keyword">with</span> model.<span class="hljs-built_in">open</span>(encoding=<span class="hljs-string">&quot;utf-8&quot;</span>) <span class="hljs-keyword">as</span> f:
-        lines = [l.strip() <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> f.readlines()]
+
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_model</span>(<span class="hljs-params">model : LDrawFile</span>):
+    lines = model.get_commands()
 
     FILE_START = <span class="hljs-string">&#x27;0 FILE &#x27;</span>
     first_file = <span class="hljs-string">&#x27;&#x27;</span>
@@ -376,26 +575,17 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
         <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> lines:
             <span class="hljs-keyword">if</span> l.startswith(FILE_START):
                 <span class="hljs-keyword">if</span> cur_file != <span class="hljs-string">&#x27;&#x27;</span>:
-                    ldr_parts[cur_file] = file_data
+                    add_virtual_file(model.path, cur_file, file_data)
                 <span class="hljs-keyword">if</span> cur_file == <span class="hljs-string">&#x27;&#x27;</span>:
                     first_file = l[<span class="hljs-built_in">len</span>(FILE_START):]
-
                 cur_file = l[<span class="hljs-built_in">len</span>(FILE_START):]
                 file_data = [l]
             <span class="hljs-keyword">else</span>:
                 file_data.append(l)
-        ldr_parts[cur_file] = file_data 
+        add_virtual_file(model.path, cur_file, file_data) 
     start_part = get_part(first_file)
 
     load_model_part(start_part, [rhino_orient])
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">find_part_names</span>():
-    parts_folder_name = <span class="hljs-string">&quot;/Users/jesterking/Documents/brickdat/ldraw/parts&quot;</span>
-    
-    parts_folder = DirectoryInfo(parts_folder_name)
-    part_files = parts_folder.EnumerateFiles(<span class="hljs-string">&quot;*.dat&quot;</span>, SearchOption.TopDirectoryOnly)
-    part_names = [pf.Name <span class="hljs-keyword">for</span> pf <span class="hljs-keyword">in</span> part_files]
-    <span class="hljs-keyword">return</span> part_names
 
 
 <span class="hljs-keyword">def</span> <span class="hljs-title function_">add_part</span>(<span class="hljs-params">part_name : <span class="hljs-built_in">str</span></span>):
@@ -421,108 +611,50 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
 
     <span class="hljs-keyword">if</span> mesh.Vertices.Count &gt; <span class="hljs-number">0</span> <span class="hljs-keyword">and</span> mesh.Faces.Count &gt; <span class="hljs-number">0</span>:
         sc.doc.InstanceDefinitions.Add(obattr.Name, <span class="hljs-string">&quot;&quot;</span>, Point3f.Origin, mesh, obattr)
+<span class="literate-tag-name">&lt;&lt;initialize color definitions&gt;&gt;</span>
 
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">adjust_color_cmd</span>(<span class="hljs-params">cmd</span>):
-    cmd = cmd.replace(<span class="hljs-string">&quot;MATERIAL GLITTER&quot;</span>, <span class="hljs-string">&quot;MATERIAL_GLITTER&quot;</span>)
-    cmd = cmd.replace(<span class="hljs-string">&quot;MATERIAL SPECKLE&quot;</span>, <span class="hljs-string">&quot;MATERIAL_SPECKLE&quot;</span>)
-    <span class="hljs-keyword">return</span> cmd
+<span class="hljs-string">&quot;&quot;&quot;
+def find_part_names():
+    global parts_folder_name
+    parts_folder = DirectoryInfo(parts_folder_name)
+    part_files = parts_folder.EnumerateFiles(&quot;*.dat&quot;, SearchOption.TopDirectoryOnly)
+    part_names = [pf.Name for pf in part_files]
+    return part_names
 
-pbr_guid = ContentUuids.PhysicallyBasedMaterialType
-
-<span class="hljs-keyword">class</span> <span class="hljs-title class_">LegoMaterial</span>:
-    <span class="hljs-keyword">def</span> <span class="hljs-title function_">__init__</span>(<span class="hljs-params">self, props, extra = <span class="hljs-literal">None</span></span>):
-        self.properties = props
-        self.name = props[<span class="hljs-string">&quot;COLOUR&quot;</span>]
-        self.extra = extra
-        self.render_material = <span class="hljs-literal">None</span>
-
-    <span class="hljs-keyword">def</span> <span class="hljs-title function_">_get_color4f</span>(<span class="hljs-params">self, colstr</span>):
-        colstr = colstr[<span class="hljs-number">1</span>:]
-        r = <span class="hljs-built_in">int</span>(colstr[<span class="hljs-number">0</span>:<span class="hljs-number">2</span>], <span class="hljs-number">16</span>) / <span class="hljs-number">255.0</span>
-        g = <span class="hljs-built_in">int</span>(colstr[<span class="hljs-number">2</span>:<span class="hljs-number">4</span>], <span class="hljs-number">16</span>) / <span class="hljs-number">255.0</span>
-        b = <span class="hljs-built_in">int</span>(colstr[<span class="hljs-number">4</span>:<span class="hljs-number">6</span>], <span class="hljs-number">16</span>) / <span class="hljs-number">255.0</span>
-        <span class="hljs-keyword">return</span> Color4f(r, g, b, <span class="hljs-number">1.0</span>)
-
-    <span class="hljs-keyword">def</span> <span class="hljs-title function_">_alpha</span>(<span class="hljs-params">self, alphastr</span>):
-        alpha = <span class="hljs-number">1.0</span> - (<span class="hljs-built_in">float</span>(alphastr) / <span class="hljs-number">255.0</span>)
-        <span class="hljs-keyword">return</span> alpha
-
-    <span class="hljs-keyword">def</span> <span class="hljs-title function_">get_render_material</span>(<span class="hljs-params">self</span>):
-        <span class="hljs-keyword">if</span> self.render_material == <span class="hljs-literal">None</span>:
-
-            <span class="hljs-keyword">raise</span> Exception(<span class="hljs-string">f&quot;Material non-existant: <span class="hljs-subst">{self.name}</span>&quot;</span>)
-        <span class="hljs-keyword">return</span> self.render_material
-
-    <span class="hljs-keyword">def</span> <span class="hljs-title function_">create_render_material</span>(<span class="hljs-params">self</span>):
-        <span class="hljs-keyword">for</span> rm <span class="hljs-keyword">in</span> sc.doc.RenderMaterials:
-            <span class="hljs-keyword">if</span> rm.Name == self.name:
-                self.render_material = rm
-                <span class="hljs-keyword">return</span>
-        pbr_rm = RenderContentType.NewContentFromTypeId(pbr_guid)
-        _basecolor = self._get_color4f(self.properties[<span class="hljs-string">&quot;VALUE&quot;</span>])
-        pbr_rm.SetParameter(PbrNames.BaseColor, _basecolor)
-
-        _opacity = <span class="hljs-number">1.0</span>
-        <span class="hljs-keyword">if</span> <span class="hljs-string">&quot;ALPHA&quot;</span> <span class="hljs-keyword">in</span> self.properties:
-            _opacity = self._alpha(self.properties[<span class="hljs-string">&quot;ALPHA&quot;</span>])
-        pbr_rm.SetParameter(PbrNames.Opacity, _opacity)
-
-        _metallic = <span class="hljs-number">0.0</span>
-        <span class="hljs-keyword">if</span> self.extra <span class="hljs-keyword">in</span> (<span class="hljs-string">&quot;METAL&quot;</span>, <span class="hljs-string">&quot;CHROME&quot;</span>):
-            _metallic = <span class="hljs-number">1.0</span>
-        pbr_rm.SetParameter(PbrNames.Metallic, _metallic)
-
-        pbr_rm.Name = self.name
-        self.render_material = pbr_rm
-        sc.doc.RenderMaterials.Add(pbr_rm)
-
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_colors</span>():
-    colorldr = get_part(<span class="hljs-string">&quot;LDConfig.ldr&quot;</span>)
-    cmds = read_data(colorldr)
-    COLOR_CMD = <span class="hljs-string">&quot;0 !COLOUR &quot;</span>
-    TO_REMOVE = <span class="hljs-string">&quot;0 !&quot;</span>
-    <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
-        <span class="hljs-keyword">if</span> cmd.startswith(COLOR_CMD):
-            properties = <span class="hljs-built_in">dict</span>()
-            cmd = cmd[<span class="hljs-built_in">len</span>(TO_REMOVE):]
-            cmd = adjust_color_cmd(cmd)
-            cmd_split = cmd.split()
-            keyvalue_count = <span class="hljs-built_in">len</span>(cmd_split) // <span class="hljs-number">2</span>
-            extra = <span class="hljs-built_in">len</span>(cmd_split) % <span class="hljs-number">2</span>
-            <span class="hljs-keyword">if</span> extra == <span class="hljs-number">1</span>:
-                extra = cmd_split[-<span class="hljs-number">1</span>]
-            <span class="hljs-keyword">else</span>:
-                extra = <span class="hljs-literal">None</span>
-            <span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">0</span>, keyvalue_count*<span class="hljs-number">2</span>, <span class="hljs-number">2</span>):
-                properties[cmd_split[i]] = cmd_split[i+<span class="hljs-number">1</span>]
-            lego_material = LegoMaterial(properties, extra)
-            materials[properties[<span class="hljs-string">&quot;CODE&quot;</span>]] = lego_material
-    <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;Colors read&quot;</span>)
-
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_all_parts_as_idefs</span>():
+def load_all_parts_as_idefs():
     fns = find_part_names()
     goforit = fns
-    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Loading <span class="hljs-subst">{<span class="hljs-built_in">len</span>(goforit)}</span> parts&quot;</span>)
+    print(f&quot;Loading {len(goforit)} parts&quot;)
 
-    total = <span class="hljs-built_in">len</span>(goforit)
-    counter = <span class="hljs-number">1</span>
-    <span class="hljs-keyword">for</span> prt <span class="hljs-keyword">in</span> goforit:
-        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;<span class="hljs-subst">{counter}</span>/<span class="hljs-subst">{total}</span> : <span class="hljs-subst">{prt}</span>&quot;</span>)
+    total = len(goforit)
+    counter = 1
+    for prt in goforit:
+        print(f&quot;{counter}/{total} : {prt}&quot;)
         add_part(prt)
         refresh()
-        counter = counter + <span class="hljs-number">1</span>
+        counter = counter + 1
 
-
+parts_folder_name = &quot;/Users/jesterking/Documents/brickdat/ldraw/parts&quot;
+#parts_folder_name = &quot;e:/dev/brickdat/ldraw/parts&quot;
+#load_all_parts_as_idefs()
+&quot;&quot;&quot;</span>
 
 sc.doc.Views.EnableRedraw(<span class="hljs-literal">False</span>, <span class="hljs-literal">False</span>, <span class="hljs-literal">False</span>)
+
+
+
+
+
+
+
+
+lib_path = <span class="hljs-string">&quot;/Users/jesterking/Documents/brickdat/ldraw&quot;</span>
+
 
 prepare_parts_dictionary()
 prepare_idefs_dictionary()
 load_colors()
 
-fl : Path = parts[<span class="hljs-string">&quot;885-1.mpd&quot;</span>]
 
 
 
@@ -533,17 +665,21 @@ fl : Path = parts[<span class="hljs-string">&quot;885-1.mpd&quot;</span>]
 
 
 
+
+
+
+
+
+fl : Path = vfiles[<span class="hljs-string">&quot;10252-1.mpd&quot;</span>]
 load_model(fl)
 
 refresh()
 
 sc.doc.Views.EnableRedraw(<span class="hljs-literal">True</span>, <span class="hljs-literal">True</span>, <span class="hljs-literal">True</span>)
 
+Rhino.RhinoApp.RunScript(<span class="hljs-string">&quot;ZEA&quot;</span>, <span class="hljs-literal">False</span>)
+
 <span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;Done&quot;</span>)
-
-
-
-
 
 </code></pre>
 

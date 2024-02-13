@@ -8,32 +8,189 @@ by James Jessiman in 1995. Since then this has become a defacto standard for
 creating LEGO models on computers.
 
 This program `rhildraw` is a simple importer of LDraw files. A model can be
-described by one or more files. These files can have the extensions `.mpd`,
-`.ldr` and `.dat`. These extensions are typically used for files with specific
-usage. The `.dat` file is used to define geometry of parts and subparts. The
-`.ldr` files often contain commands to load parts. And `.mpd` is a form of
-multi-part document, where in one file several files are combined.
+described by one or more files. We'll get to the details of these files as we go
+on our journey to implementing the importer.
 
-We'll get to the details of these files as we go on our journey to implementing
-the importer.
+# Overview of the program
 
-``` mermaid
-sequenceDiagram
-    Alice->>John: Hello John, how are you?
-    John-->>Alice: Great!
-    Alice-)John: See you later!
-```
+The following diagram shows the main structure of the script
 
 ``` mermaid
 flowchart TD
-    A[Start] --> B{Is it?}
-    B -->|Yes| C[OK]
-    C --> D[Rethink]
-    D --> B
-    B ---->|No| E[End]
+    subgraph init
+    A[[Initialization]]
+    B[Read file]
+    end
+    subgraph geom [Read Module]
+    direction LR
+    C[[Handle commands]]
+    D[[Add part geometry]]
+    E[[Create block definition]]
+    end
+    A --> B
+    B --> geom
+    C --> D
+    D --> C
+    D --> E
 ```
 
-# Line types
+## Initialization
+
+We will be using a couple of dictionaries to keep track of files, materials and
+so on. These will make finding data easier as the command to import another file
+uses the file name as the key either without or with a parent folder prepended.
+
+Dictionaries for the follow data are used:
+
+* `vfiles`: dictionary to file representations. Each file will be represented
+  twice. Once with just the file name and once with parent folder prepended
+  `parent/file.dat`
+* `idefs`: dictionary holding all block definitions. The block definiton name is
+  the key. Block definition names are part file names without the extension. The
+  block definitions are the values. The corresponding `RhinoCommon` class is
+  `InstanceDefinition`.
+* `materials`: dictionary containing LEGO colors as `RenderMaterial`s. The color
+  code is the key. Colors are materialized as `RenderMaterial` only when
+  actually needed.
+
+``` py : <<initialize global variables>>=
+
+<<LEGO material class>>
+# Globals
+vfiles: Mapping[str, LDrawFile]= dict()
+idefs : Mapping[str, InstanceDefinition]= dict()
+materials : Mapping[str, LegoMaterial]= dict()
+vertidx = 0
+```
+
+### Reading color definitions
+
+Colors
+
+#### LegoMaterial class
+
+``` py : <<initialize color definitions>>=
+
+<<method to adjust color command>>
+
+<<method to load colors>>
+```
+
+``` py : <<method to adjust color command>>=
+def adjust_color_cmd(cmd):
+    cmd = cmd.replace("MATERIAL GLITTER", "MATERIAL_GLITTER")
+    cmd = cmd.replace("MATERIAL SPECKLE", "MATERIAL_SPECKLE")
+    return cmd
+```
+
+``` py : <<method to load colors>>=
+def load_colors():
+    <<load color commands>>
+    COLOR_CMD = "0 !COLOUR "
+    TO_REMOVE = "0 !"
+    for cmd in cmds:
+        if cmd.startswith(COLOR_CMD):
+            <<read color properties from command>>
+            <<create material and save to dictionary>>
+    print("Colors read")
+```
+
+``` py : <<create material and save to dictionary>>=
+lego_material = LegoMaterial(properties, extra)
+materials[properties["CODE"]] = lego_material
+```
+
+``` py : <<read color properties from command>>=
+properties = dict()
+cmd = cmd[len(TO_REMOVE):]
+cmd = adjust_color_cmd(cmd)
+cmd_split = cmd.split()
+keyvalue_count = len(cmd_split) // 2
+extra = len(cmd_split) % 2
+if extra == 1:
+    extra = cmd_split[-1]
+else:
+    extra = None
+for i in range(0, keyvalue_count*2, 2):
+    properties[cmd_split[i]] = cmd_split[i+1]
+```
+
+``` py : <<load color commands>>=
+colorldr = get_part("LDConfig.ldr")
+cmds = read_data(colorldr)
+```
+
+``` py : <<LEGO material class>>=
+class LegoMaterial:
+    def __init__(self, props, extra = None):
+        self.properties = props
+        self.name = props["COLOUR"]
+        self.extra = extra
+        self.render_material = None
+
+    def _get_color4f(self, colstr):
+        colstr = colstr[1:]
+        r = int(colstr[0:2], 16) / 255.0
+        g = int(colstr[2:4], 16) / 255.0
+        b = int(colstr[4:6], 16) / 255.0
+        return Color4f(r, g, b, 1.0)
+
+    def _alpha(self, alphastr):
+        alpha = 1.0 - (float(alphastr) / 255.0)
+        return alpha
+
+    def get_render_material(self):
+        if self.render_material == None:
+
+            raise Exception(f"Material non-existant: {self.name}")
+        return self.render_material
+
+    def create_render_material(self):
+        for rm in sc.doc.RenderMaterials:
+            if rm.Name == self.name:
+                self.render_material = rm
+                return
+        pbr_rm = RenderContentType.NewContentFromTypeId(pbr_guid)
+        _basecolor = self._get_color4f(self.properties["VALUE"])
+        pbr_rm.SetParameter(PbrNames.BaseColor, _basecolor)
+
+        _opacity = 1.0
+        if "ALPHA" in self.properties:
+            _opacity = self._alpha(self.properties["ALPHA"])
+        pbr_rm.SetParameter(PbrNames.Opacity, _opacity)
+
+        _metallic = 0.0
+        if self.extra in ("METAL", "CHROME"):
+            _metallic = 1.0
+        pbr_rm.SetParameter(PbrNames.Metallic, _metallic)
+
+        pbr_rm.Name = self.name
+        self.render_material = pbr_rm
+        sc.doc.RenderMaterials.Add(pbr_rm)
+
+```
+
+``` py : <<initialize global variables>>=+
+pbr_guid = ContentUuids.PhysicallyBasedMaterialType
+```
+
+# Reading files
+
+All LDraw files consist of lines where each line is of a certain line type. Each
+line type denotes a command. All LDraw files have these line types, so it is
+easy to parse them.
+
+LDraw files have the extenions `.mpd`, `.ldr` and `.dat`. These extensions are
+typically used for files with specific usage although from just the contents it
+doesn't really matter.
+
+However, the following are well-established conventions. The `.dat` file is used
+to define geometry of parts and subparts. The `.ldr` files often contain
+commands to load parts, they express assemblies or models. The `.mpd` is a form
+of multi-part document, where in one file several files are combined.
+
+
+## Line types
 
 The heart of the LDraw specification revolves around line types. The
 specification essentially is a collection of lines whereby the first character
@@ -49,11 +206,18 @@ Line types 3 and 4 add polygon methods, triangles and quads respectively.
 
 # Adding polygons
 
-Handling line types 3 and 4 means adding either a triangle or a quad. The form of line types 3 and 4 are similar. A line type three starts with the number `3` followed by a color code and three triplets of values that are either integers or floating point. For both line types we ignore the color code as we'll be using the color codes defined on line type 1 commands. But we'll get into that later.
+Handling line types 3 and 4 means adding either a triangle or a quad. The form
+of line types 3 and 4 are similar. A line type three starts with the number `3`
+followed by a color code and three triplets of values that are either integers
+or floating point. For both line types we ignore the color code as we'll be
+using the color codes defined on line type 1 commands. But we'll get into that
+later.
 
-The line type four has a similar format, starting with number `4`, the color code and then _four_ triplets of values.
+The line type four has a similar format, starting with number `4`, the color
+code and then _four_ triplets of values.
 
-From the start number we parse how many triplets - vertices we'll be handling. This is the first character of the command string.
+From the start number we parse how many triplets - vertices we'll be handling.
+This is the first character of the command string.
 
 ``` py : <<parse vertex count>>=
 vertices = int(cmd[0])
@@ -114,17 +278,25 @@ def add_poly(m : Mesh, cmd : str, xforms : list):
     <<add face to mesh>>
 ```
 
+# Reading files and the LDraw library
+
+
+
+
 # TO BE WRITTEN AS LITERATE PROGRAM
 
 ``` py : <<the whole script.*>>= ./src/rhildraw.py $ template=pysrc.template
 import scriptcontext as sc
 import math
 
+from typing import Mapping, List
+
 import Rhino
 
 from Rhino.Geometry import Transform, Mesh, Vector3f, Point3f
 from Rhino.Display import Color4f
 from Rhino.DocObjects import ObjectAttributes, ObjectMaterialSource
+from Rhino.DocObjects import InstanceDefinition
 from Rhino.Render import ChildSlotNames, ContentUuids, RenderContentType
 
 PbrNames = ChildSlotNames.PhysicallyBased
@@ -135,12 +307,24 @@ from System.IO import EnumerationOptions, SearchOption
 
 from pathlib import Path
 
-# Globals
-parts = dict()
-idefs = dict()
-ldr_parts = dict() # virtual files from .mpd
-materials = dict()
-vertidx = 0
+class LDrawFile:
+    def __init__(self, path : Path, data : List[str] = []):
+        self.commands = data
+        self.path = path
+        self.name = path.name
+        self.suffix = path.suffix
+        self.pname = f"{path.parent.name}\\{self.name}"
+
+    def get_commands(self):
+        if len(self.commands)==0:
+            with self.path.open(encoding="utf-8") as f:
+                cmds = [l.strip() for l in f.readlines()]
+                cmds = [c for c in cmds if len(c) > 0]
+                self.commands = cmds
+
+        return self.commands
+
+<<initialize global variables>>
 
 def refresh():
     sc.doc.Views.Redraw()
@@ -213,15 +397,15 @@ def clean_name(part_name):
     return part_name
 
 def prepare_parts_dictionary():
-    lib_path = "/Users/jesterking/Documents/brickdat/ldraw"
-    #lib_path = "e:/dev/brickdat/ldraw"
+    global lib_path
     library_path : Path = Path(lib_path)
     library_path_net : DirectoryInfo = DirectoryInfo(lib_path)
     all_parts_net = library_path_net.EnumerateFiles("*", SearchOption.AllDirectories)
     for p in all_parts_net:
         fn = Path(p.FullName)
-        parts[p.Name] = fn
-        parts[f"{fn.parent.name}\\{p.Name}"] = fn
+        ldrawfile = LDrawFile(fn)
+        vfiles[ldrawfile.name] = ldrawfile
+        vfiles[ldrawfile.pname] = ldrawfile
 
 def prepare_idefs_dictionary():
     for idef in sc.doc.InstanceDefinitions:
@@ -250,15 +434,12 @@ def collate_transforms(xforms):
 <<add polygon method>>
 
 def get_part(part_name : str):
-    global parts, ldr_parts
+    global vfiles
 
     part_name = part_name.replace('/', '\\')
 
-    if part_name in parts:
-        return parts[part_name]
-
-    if part_name in ldr_parts:
-        return ldr_parts[part_name]
+    if part_name in vfiles:
+        return vfiles[part_name].get_commands()
 
     raise Exception(f"Part file not found: {part_name}")
 
@@ -356,10 +537,15 @@ def load_model_part(part, xforms : list):
 
             refresh()
 
+def add_virtual_file(model : Path, filename : str, data : List[str]):
+    virtual_file_path = model.parent / 'virtual' / filename
+    virtual_file = LDrawFile(virtual_file_path, data)
+    vfiles[virtual_file.name] = virtual_file
+    vfiles[virtual_file.pname] = virtual_file
 
-def load_model(model : Path):
-    with model.open(encoding="utf-8") as f:
-        lines = [l.strip() for l in f.readlines()]
+
+def load_model(model : LDrawFile):
+    lines = model.get_commands()
 
     FILE_START = '0 FILE '
     first_file = ''
@@ -370,26 +556,17 @@ def load_model(model : Path):
         for l in lines:
             if l.startswith(FILE_START):
                 if cur_file != '':
-                    ldr_parts[cur_file] = file_data
+                    add_virtual_file(model.path, cur_file, file_data)
                 if cur_file == '':
                     first_file = l[len(FILE_START):]
-
                 cur_file = l[len(FILE_START):]
                 file_data = [l]
             else:
                 file_data.append(l)
-        ldr_parts[cur_file] = file_data # last file
+        add_virtual_file(model.path, cur_file, file_data) # last file
     start_part = get_part(first_file)
 
     load_model_part(start_part, [rhino_orient])
-
-def find_part_names():
-    parts_folder_name = "/Users/jesterking/Documents/brickdat/ldraw/parts"
-    #parts_folder_name = "e:/dev/brickdat/ldraw/parts"
-    parts_folder = DirectoryInfo(parts_folder_name)
-    part_files = parts_folder.EnumerateFiles("*.dat", SearchOption.TopDirectoryOnly)
-    part_names = [pf.Name for pf in part_files]
-    return part_names
 
 
 def add_part(part_name : str):
@@ -415,85 +592,15 @@ def add_part(part_name : str):
 
     if mesh.Vertices.Count > 0 and mesh.Faces.Count > 0:
         sc.doc.InstanceDefinitions.Add(obattr.Name, "", Point3f.Origin, mesh, obattr)
+<<initialize color definitions>>
 
-def adjust_color_cmd(cmd):
-    cmd = cmd.replace("MATERIAL GLITTER", "MATERIAL_GLITTER")
-    cmd = cmd.replace("MATERIAL SPECKLE", "MATERIAL_SPECKLE")
-    return cmd
-
-pbr_guid = ContentUuids.PhysicallyBasedMaterialType
-
-class LegoMaterial:
-    def __init__(self, props, extra = None):
-        self.properties = props
-        self.name = props["COLOUR"]
-        self.extra = extra
-        self.render_material = None
-
-    def _get_color4f(self, colstr):
-        colstr = colstr[1:]
-        r = int(colstr[0:2], 16) / 255.0
-        g = int(colstr[2:4], 16) / 255.0
-        b = int(colstr[4:6], 16) / 255.0
-        return Color4f(r, g, b, 1.0)
-
-    def _alpha(self, alphastr):
-        alpha = 1.0 - (float(alphastr) / 255.0)
-        return alpha
-
-    def get_render_material(self):
-        if self.render_material == None:
-
-            raise Exception(f"Material non-existant: {self.name}")
-        return self.render_material
-
-    def create_render_material(self):
-        for rm in sc.doc.RenderMaterials:
-            if rm.Name == self.name:
-                self.render_material = rm
-                return
-        pbr_rm = RenderContentType.NewContentFromTypeId(pbr_guid)
-        _basecolor = self._get_color4f(self.properties["VALUE"])
-        pbr_rm.SetParameter(PbrNames.BaseColor, _basecolor)
-
-        _opacity = 1.0
-        if "ALPHA" in self.properties:
-            _opacity = self._alpha(self.properties["ALPHA"])
-        pbr_rm.SetParameter(PbrNames.Opacity, _opacity)
-
-        _metallic = 0.0
-        if self.extra in ("METAL", "CHROME"):
-            _metallic = 1.0
-        pbr_rm.SetParameter(PbrNames.Metallic, _metallic)
-
-        pbr_rm.Name = self.name
-        self.render_material = pbr_rm
-        sc.doc.RenderMaterials.Add(pbr_rm)
-
-
-def load_colors():
-    colorldr = get_part("LDConfig.ldr")
-    cmds = read_data(colorldr)
-    COLOR_CMD = "0 !COLOUR "
-    TO_REMOVE = "0 !"
-    for cmd in cmds:
-        if cmd.startswith(COLOR_CMD):
-            properties = dict()
-            cmd = cmd[len(TO_REMOVE):]
-            cmd = adjust_color_cmd(cmd)
-            cmd_split = cmd.split()
-            keyvalue_count = len(cmd_split) // 2
-            extra = len(cmd_split) % 2
-            if extra == 1:
-                extra = cmd_split[-1]
-            else:
-                extra = None
-            for i in range(0, keyvalue_count*2, 2):
-                properties[cmd_split[i]] = cmd_split[i+1]
-            lego_material = LegoMaterial(properties, extra)
-            materials[properties["CODE"]] = lego_material
-    print("Colors read")
-
+"""
+def find_part_names():
+    global parts_folder_name
+    parts_folder = DirectoryInfo(parts_folder_name)
+    part_files = parts_folder.EnumerateFiles("*.dat", SearchOption.TopDirectoryOnly)
+    part_names = [pf.Name for pf in part_files]
+    return part_names
 
 def load_all_parts_as_idefs():
     fns = find_part_names()
@@ -508,36 +615,53 @@ def load_all_parts_as_idefs():
         refresh()
         counter = counter + 1
 
+parts_folder_name = "/Users/jesterking/Documents/brickdat/ldraw/parts"
+#parts_folder_name = "e:/dev/brickdat/ldraw/parts"
 #load_all_parts_as_idefs()
+"""
 
 sc.doc.Views.EnableRedraw(False, False, False)
+
+###########################################
+## Set path to where your LDraw library and
+## model files are. They should be under
+## the same main folder
+## Use always forward slashes, also for
+## folders on Windows
+###########################################
+lib_path = "/Users/jesterking/Documents/brickdat/ldraw"
+#lib_path = "e:/dev/brickdat/ldraw"
 
 prepare_parts_dictionary()
 prepare_idefs_dictionary()
 load_colors()
 
-fl : Path = parts["885-1.mpd"]
-#fl : Path = parts["8836-1.mpd"]
-#fl : Path = parts["10019-1.mpd"]
-#fl : Path = parts["10030-1.mpd"]
-#fl : Path = parts["10143-1.mpd"]
-#fl : Path = parts["10252-1.mpd"]
-#fl : Path = parts["mytester.mpd"]
-#fl : Path = parts["75969-1.mpd"]
-#fl : Path = parts["31048-1.mpd"]
-#fl : Path = parts["3063-1.mpd"]
-#fl : Path = parts["42064-1.mpd"]
+#fl : Path = vfiles["885-1.mpd"]
+#fl : Path = vfiles["8836-1.mpd"]
+#fl : Path = vfiles["10019-1.mpd"]
+#fl : Path = vfiles["10030-1.mpd"]
+#fl : Path = vfiles["10143-1.mpd"]
+#fl : Path = vfiles["75969-1.mpd"]
+#fl : Path = vfiles["31048-1.mpd"]
+#fl : Path = vfiles["3063-1.mpd"]
+#fl : Path = vfiles["42064-1.mpd"]
+
+
+###########################################
+## Specify what model to load. Use just the
+## file name (including extension)
+###########################################
+fl : Path = vfiles["10252-1.mpd"]
 load_model(fl)
 
 refresh()
 
 sc.doc.Views.EnableRedraw(True, True, True)
 
+Rhino.RhinoApp.RunScript("ZEA", False)
+
 print("Done")
 
-
-#print(f"Read {len(goforit)} parts")
-
-
 ```
+
 
