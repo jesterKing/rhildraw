@@ -11,7 +11,7 @@
 #
 # The source code repository is at https://github.com/jesterKing/rhildraw
 #
-# The code is licensed under MIT license. See
+# The code, literate and generated, is licensed under MIT license. See
 # https://github.com/jesterKing/rhildraw/LICENSE for more details.
 #
 # Or you can read the HTML rendered documentation at
