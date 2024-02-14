@@ -75,8 +75,7 @@ ul {
 }
 
 li::before {
-    /* content: "\2a20";*/
-    content: "\2bc8";
+    content: "-&gt;";
     color: rgba(0, 0, 0, 0.5);
     margin-left: -1.5em;
     padding-right: 1em;
