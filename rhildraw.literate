@@ -1,10 +1,5 @@
 # LDraw into Rhino 3D
 
-* LDraw file format documentation, see File Format Specification:
-  https://www.ldraw.org/article/218.html
-* Colors see Colour Definition Language Extension:
-  https://www.ldraw.org/article/299.html
-
 LEGO models can be described in the LDraw format. The file format was developed
 by James Jessiman in 1995. Since then this has become a defacto standard for
 creating LEGO models on computers.
@@ -21,13 +16,22 @@ Love and Care to massage it for better readability. I hope however that we all
 can enjoy reading this already.
 
 The repository for this literate program is at
-https://github.com/jesterKing/rhildraw
+[https://github.com/jesterKing/rhildraw](https://github.com/jesterKing/rhildraw)
 
 ## TLDR
 
 If you don't feel like reading documentation much you can skip ahead and just go
 straight to the [generated
 script](https://github.com/jesterKing/rhildraw/blob/main/src/rhildraw.py).
+
+## Related documents
+
+Here a couple of links to the specifications on [LDraw.org](https://www.ldraw.org)
+
+* LDraw file format documentation, see [File Format
+  Specification](https://www.ldraw.org/article/218.html)
+* Colors see [Colour Definition Language
+  Extension](https://www.ldraw.org/article/299.html)
 
 ## Installation and Usage
 
