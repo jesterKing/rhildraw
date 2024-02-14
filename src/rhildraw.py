@@ -195,10 +195,13 @@ vfiles: Mapping[str, LDrawFile]= dict()
 idefs : Mapping[str, InstanceDefinition]= dict()
 materials : Mapping[str, LDrawMaterial]= dict()
 vertidx = 0
+zoom_extents = False
 pbr_guid = ContentUuids.PhysicallyBasedMaterialType
 
-def refresh():
+def refresh(zoom_extents = False):
     sc.doc.Views.Redraw()
+    if zoom_extents:
+        Rhino.RhinoApp.RunScript("ZEA", False)
     Rhino.RhinoApp.Wait()
 
 def clean_name(part_name):
@@ -368,7 +371,7 @@ def load_assembly(part : LDrawFile, xforms : list):
                     else:
                         print(f"Failed to add part {prt}")
 
-            refresh()
+            refresh(zoom_extents)
 def load_model(model : LDrawFile):
     lines = model.get_commands()
 
@@ -415,7 +418,7 @@ def load_colors():
 # If you want to see the model "build" while
 # the script imports comment the following line
 # out, or set every False to True
-sc.doc.Views.EnableRedraw(False, False, False)
+#sc.doc.Views.EnableRedraw(False, False, False)
 
 ###########################################
 ## Set path to where your LDraw library and
@@ -431,14 +434,16 @@ prepare_parts_dictionary()
 prepare_idefs_dictionary()
 load_colors()
 
+zoom_extents = True # Set to True to always see the whole model during import
+
 ###########################################
 ## Specify what model to load. Use just the
 ## file name (including extension)
 ###########################################
-fl : Path = vfiles["885-1.mpd"]
+fl : Path = vfiles["10030-1.mpd"]
 load_model(fl)
 
-refresh()
+refresh(zoom_extents)
 
 sc.doc.Views.EnableRedraw(True, True, True)
 

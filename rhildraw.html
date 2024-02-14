@@ -81,6 +81,7 @@ vfiles: Mapping[<span class="hljs-built_in">str</span>, LDrawFile]= <span class=
 idefs : Mapping[<span class="hljs-built_in">str</span>, InstanceDefinition]= <span class="hljs-built_in">dict</span>()
 materials : Mapping[<span class="hljs-built_in">str</span>, LDrawMaterial]= <span class="hljs-built_in">dict</span>()
 vertidx = <span class="hljs-number">0</span>
+zoom_extents = <span class="hljs-literal">False</span>
 </code></pre>
 
 </div>
@@ -590,7 +591,7 @@ flowchart
                     <span class="hljs-keyword">else</span>:
                         <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Failed to add part <span class="hljs-subst">{prt}</span>&quot;</span>)
 
-            refresh()
+            refresh(zoom_extents)
 </code></pre>
 
 </div>
@@ -770,8 +771,10 @@ that the end result will be rotated properly to the Rhino Z-axis up world.</p>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;misc helper methods&gt;&gt;= </div>
 <div class="code">
-<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">refresh</span>():
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">refresh</span>(<span class="hljs-params">zoom_extents = <span class="hljs-literal">False</span></span>):
     sc.doc.Views.Redraw()
+    <span class="hljs-keyword">if</span> zoom_extents:
+        Rhino.RhinoApp.RunScript(<span class="hljs-string">&quot;ZEA&quot;</span>, <span class="hljs-literal">False</span>)
     Rhino.RhinoApp.Wait()
 
 <span class="hljs-keyword">def</span> <span class="hljs-title function_">clean_name</span>(<span class="hljs-params">part_name</span>):
@@ -834,7 +837,7 @@ rhmath = Rhino.RhinoMath
 
 
 
-sc.doc.Views.EnableRedraw(<span class="hljs-literal">False</span>, <span class="hljs-literal">False</span>, <span class="hljs-literal">False</span>)
+
 
 
 
@@ -850,14 +853,16 @@ prepare_parts_dictionary()
 prepare_idefs_dictionary()
 load_colors()
 
+zoom_extents = <span class="hljs-literal">True</span> 
 
 
 
 
-fl : Path = vfiles[<span class="hljs-string">&quot;885-1.mpd&quot;</span>]
+
+fl : Path = vfiles[<span class="hljs-string">&quot;10030-1.mpd&quot;</span>]
 load_model(fl)
 
-refresh()
+refresh(zoom_extents)
 
 sc.doc.Views.EnableRedraw(<span class="hljs-literal">True</span>, <span class="hljs-literal">True</span>, <span class="hljs-literal">True</span>)
 
