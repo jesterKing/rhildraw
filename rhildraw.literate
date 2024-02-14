@@ -358,6 +358,20 @@ def add_poly(m : Mesh, cmd : str, xforms : list):
     <<add face to mesh>>
 ```
 
+## Loading a model
+
+``` mermaid
+flowchart
+    A[Model]
+    B[Assembly]
+    C[Part]
+
+    A --> B
+    B --> B
+    B --> C
+    C --> C
+```
+
 ## TO BE WRITTEN AS LITERATE PROGRAM
 
 ``` py : <<the whole script.*>>= ./src/rhildraw.py $ template=pysrc.template

@@ -373,7 +373,19 @@ we first <code>&lt;&lt;parse vertex count&gt;&gt;</code> and <code>&lt;&lt;parse
 </code></pre>
 
 </div>
-</div><h2>TO BE WRITTEN AS LITERATE PROGRAM</h2>
+</div><h2>Loading a model</h2>
+<pre class="mermaid">
+flowchart
+    A[Model]
+    B[Assembly]
+    C[Part]
+
+    A --> B
+    B --> B
+    B --> C
+    C --> C
+
+</pre><h2>TO BE WRITTEN AS LITERATE PROGRAM</h2>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;the whole script.*&gt;&gt;= ./src/rhildraw.py $</div>
 <div class="code">
