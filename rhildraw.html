@@ -67,6 +67,89 @@ vertidx = <span class="hljs-number">0</span>
 </code></pre>
 
 </div>
+</div><h3>Preparing the virtual file system</h3>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to prepare virtual files&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">prepare_parts_dictionary</span>():
+    <span class="hljs-keyword">global</span> lib_path
+    library_path : Path = Path(lib_path)
+    library_path_net : DirectoryInfo = DirectoryInfo(lib_path)
+    all_parts_net = library_path_net.EnumerateFiles(<span class="hljs-string">&quot;*&quot;</span>, SearchOption.AllDirectories)
+    <span class="hljs-keyword">for</span> p <span class="hljs-keyword">in</span> all_parts_net:
+        fn = Path(p.FullName)
+        ldrawfile = LDrawFile(fn)
+        vfiles[ldrawfile.name] = ldrawfile
+        vfiles[ldrawfile.pname] = ldrawfile
+</code></pre>
+
+</div>
+</div><h3>Fetch from the virtual file system</h3>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to get LDrawFile instance&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">get_ldraw_file</span>(<span class="hljs-params">part_name : <span class="hljs-built_in">str</span></span>) -&gt; LDrawFile:
+    <span class="hljs-keyword">global</span> vfiles
+
+    part_name = part_name.replace(<span class="hljs-string">&#x27;/&#x27;</span>, <span class="hljs-string">&#x27;\\&#x27;</span>)
+
+    <span class="hljs-keyword">if</span> part_name <span class="hljs-keyword">in</span> vfiles:
+        <span class="hljs-keyword">return</span> vfiles[part_name]
+
+    <span class="hljs-keyword">raise</span> Exception(<span class="hljs-string">f&quot;Part file not found: <span class="hljs-subst">{part_name}</span>&quot;</span>)
+</code></pre>
+
+</div>
+</div><h3>Add a virtual file to the virtual file system</h3>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to add a virtual file&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">add_virtual_file</span>(<span class="hljs-params">model : Path, filename : <span class="hljs-built_in">str</span>, data : <span class="hljs-type">List</span>[<span class="hljs-built_in">str</span>]</span>):
+    virtual_file_path = model.parent / <span class="hljs-string">&#x27;virtual&#x27;</span> / filename
+    virtual_file = LDrawFile(virtual_file_path, data)
+    vfiles[virtual_file.name] = virtual_file
+    vfiles[virtual_file.pname] = virtual_file
+</code></pre>
+
+</div>
+</div><h3>Preparing the instance definition map</h3>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to prepare instance definitions&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">prepare_idefs_dictionary</span>():
+    <span class="hljs-keyword">for</span> idef <span class="hljs-keyword">in</span> sc.doc.InstanceDefinitions:
+        idefs[idef.Name] = idef
+</code></pre>
+
+</div>
+</div><h3>Update the instance definition map</h3>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to update instance definitions&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">update_idefs_dictionary</span>(<span class="hljs-params">part_name</span>):
+    idef_part_name = clean_name(part_name)
+    idef = sc.doc.InstanceDefinitions.Find(idef_part_name)
+    <span class="hljs-keyword">if</span> idef:
+        idefs[idef_part_name] = idef
+        <span class="hljs-keyword">return</span> idef
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">None</span>
+</code></pre>
+
+</div>
+</div><h3>Fetching instance definition</h3>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to get InstanceDefinition instance&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">get_part_idef</span>(<span class="hljs-params">prt</span>):
+    p = Path(prt)
+    pname = clean_name(p.name)
+    <span class="hljs-keyword">if</span> pname <span class="hljs-keyword">in</span> idefs:
+        <span class="hljs-keyword">return</span> idefs[pname]
+
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">None</span>
+</code></pre>
+
+</div>
 </div><h3>Reading color definitions</h3>
 <p>Colors are defined just like parts and assemblies. Line type 0 is used through
 the Colour Definition Language Extension
@@ -216,7 +299,9 @@ materials[properties[<span class="hljs-string">&quot;CODE&quot;</span>]] = ldraw
 </code></pre>
 
 </div>
-</div><div class="codefragment">
+</div><p>The content GUID used to create Physically Based Material instances is
+short-handed in <code>pbr_guid</code>.</p>
+<div class="codefragment">
 <div class="fragmentname">&lt;&lt;initialize global variables&gt;&gt;=+ </div>
 <div class="code">
 <pre><code>pbr_guid = ContentUuids.PhysicallyBasedMaterialType
@@ -244,6 +329,8 @@ itself is very simple. It has only a method for
 <pre><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">LDrawFile</span>:
     <span class="literate-tag-name">&lt;&lt;initialization of LDrawFile&gt;&gt;</span>
     <span class="literate-tag-name">&lt;&lt;get commands from LDrawFile&gt;&gt;</span>
+    <span class="literate-tag-name">&lt;&lt;method to determine if LDrawFile contains poly commands&gt;&gt;</span>
+
 </code></pre>
 
 </div>
@@ -281,6 +368,20 @@ to perhaps support falling back to encodings of old files.</p>
             self.commands = cmds
 
     <span class="hljs-keyword">return</span> self.commands
+</code></pre>
+
+</div>
+</div><div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to determine if LDrawFile contains poly commands&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">contains_poly_commands</span>(<span class="hljs-params">self</span>):
+    cmds = self.get_commands()
+    <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
+        <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(cmd) == <span class="hljs-number">0</span>: <span class="hljs-keyword">continue</span>
+        <span class="hljs-keyword">if</span> cmd[<span class="hljs-number">0</span>] <span class="hljs-keyword">in</span> (<span class="hljs-string">&quot;2&quot;</span>, <span class="hljs-string">&quot;3&quot;</span>, <span class="hljs-string">&quot;4&quot;</span>, <span class="hljs-string">&quot;5&quot;</span>):
+            <span class="hljs-keyword">return</span> <span class="hljs-literal">True</span>
+
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">False</span>
 </code></pre>
 
 </div>
@@ -345,7 +446,8 @@ skip adding this as a polygon.</p>
 </code></pre>
 
 </div>
-</div><p>With all vertices added and <code>vertidx</code> adjusted we can now add the face definition for either the triangle or the quad.</p>
+</div><p>With all vertices added and <code>vertidx</code> adjusted we can now add the face
+definition for either the triangle or the quad.</p>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;add face to mesh&gt;&gt;= </div>
 <div class="code">
@@ -378,48 +480,160 @@ we first <code>&lt;&lt;parse vertex count&gt;&gt;</code> and <code>&lt;&lt;parse
 flowchart
     A[Model]
     B[Assembly]
-    C[Part]
+    C[Geometry]
 
     A --> B
     B --> B
     B --> C
     C --> C
 
-</pre><h2>TO BE WRITTEN AS LITERATE PROGRAM</h2>
-<div class="codefragment">
-<div class="fragmentname">&lt;&lt;the whole script.*&gt;&gt;= ./src/rhildraw.py $</div>
+</pre><div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to load a complete model&gt;&gt;= </div>
 <div class="code">
-<pre><code><span class="hljs-keyword">import</span> scriptcontext <span class="hljs-keyword">as</span> sc
-<span class="hljs-keyword">import</span> math
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">load_model</span>(<span class="hljs-params">model : LDrawFile</span>):
+    lines = model.get_commands()
 
-<span class="hljs-keyword">from</span> typing <span class="hljs-keyword">import</span> Mapping, <span class="hljs-type">List</span>
+    FILE_START = <span class="hljs-string">&#x27;0 FILE &#x27;</span>
+    first_file = <span class="hljs-string">&#x27;&#x27;</span>
+    <span class="hljs-keyword">if</span> model.suffix.lower() == <span class="hljs-string">&#x27;.mpd&#x27;</span>:
+        
+        cur_file = <span class="hljs-string">&#x27;&#x27;</span>
+        file_data = []
+        <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> lines:
+            <span class="hljs-keyword">if</span> l.startswith(FILE_START):
+                <span class="hljs-keyword">if</span> cur_file != <span class="hljs-string">&#x27;&#x27;</span>:
+                    add_virtual_file(model.path, cur_file, file_data)
+                <span class="hljs-keyword">if</span> cur_file == <span class="hljs-string">&#x27;&#x27;</span>:
+                    first_file = l[<span class="hljs-built_in">len</span>(FILE_START):]
+                cur_file = l[<span class="hljs-built_in">len</span>(FILE_START):]
+                file_data = [l]
+            <span class="hljs-keyword">else</span>:
+                file_data.append(l)
+        add_virtual_file(model.path, cur_file, file_data) 
+    start_part = get_ldraw_file(first_file)
 
-<span class="hljs-keyword">import</span> Rhino
+    load_assembly(start_part, [rhino_orient])
+</code></pre>
 
-<span class="hljs-keyword">from</span> Rhino.Geometry <span class="hljs-keyword">import</span> Transform, Mesh, Vector3f, Point3f
-<span class="hljs-keyword">from</span> Rhino.Display <span class="hljs-keyword">import</span> Color4f
-<span class="hljs-keyword">from</span> Rhino.DocObjects <span class="hljs-keyword">import</span> ObjectAttributes, ObjectMaterialSource
-<span class="hljs-keyword">from</span> Rhino.DocObjects <span class="hljs-keyword">import</span> InstanceDefinition
-<span class="hljs-keyword">from</span> Rhino.Render <span class="hljs-keyword">import</span> ChildSlotNames, ContentUuids, RenderContentType
+</div>
+</div><h3>Loading assembly</h3>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;method to load an assembly&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">load_assembly</span>(<span class="hljs-params">part : LDrawFile, xforms : <span class="hljs-built_in">list</span></span>):
+    cmds = []
+    cmds = part.get_commands()
 
-PbrNames = ChildSlotNames.PhysicallyBased
-rhmath = Rhino.RhinoMath
+    cmds = [l <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> cmds <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(l)&gt;<span class="hljs-number">0</span>]
+    <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
+        <span class="hljs-keyword">if</span> cmd.startswith(<span class="hljs-string">&#x27;1&#x27;</span>):
+            d = cmd.split()
+            color_code = d[<span class="hljs-number">1</span>]
+            materials[color_code].create_render_material()
+            rm = materials[color_code].render_material
+            xform = LDrawXform(cmd)
+            prt = <span class="hljs-string">&#x27; &#x27;</span>.join(d[<span class="hljs-number">14</span>:])
+            _xforms = xforms[:] + [xform]
 
-<span class="hljs-keyword">from</span> System.IO <span class="hljs-keyword">import</span> DirectoryInfo, Directory, File, FileInfo
-<span class="hljs-keyword">from</span> System.IO <span class="hljs-keyword">import</span> EnumerationOptions, SearchOption
+            obattr = ObjectAttributes()
+            obattr.Name = clean_name(prt)
+            obattr.Visible = <span class="hljs-literal">True</span>
+            obattr.MaterialSource = ObjectMaterialSource.MaterialFromObject
+            obattr.RenderMaterial = rm
 
-<span class="hljs-keyword">from</span> pathlib <span class="hljs-keyword">import</span> Path
+            <span class="hljs-keyword">if</span> prt.lower().endswith(<span class="hljs-string">&quot;.ldr&quot;</span>):
+                ldr_file = get_ldraw_file(prt)
+                <span class="hljs-keyword">if</span> ldr_file.contains_poly_commands():
+                    add_geometry(prt)
+                    idef = update_idefs_dictionary(prt)
+                    <span class="hljs-keyword">if</span> idef != <span class="hljs-literal">None</span>:
+                        xform = collate_transforms(_xforms)
+                        sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
+                    <span class="hljs-keyword">else</span>:
+                        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Couldn&#x27;t add part <span class="hljs-subst">{prt}</span>&quot;</span>)
+                <span class="hljs-keyword">else</span>:
+                    load_assembly(ldr_file, _xforms)
+            <span class="hljs-keyword">else</span>:
+                idef = get_part_idef(prt)
+                xform = collate_transforms(_xforms)
+                <span class="hljs-keyword">if</span> idef != <span class="hljs-literal">None</span>:
+                    sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
+                <span class="hljs-keyword">else</span>:
+                    add_geometry(prt)
+                    idef = update_idefs_dictionary(prt)
+                    <span class="hljs-keyword">if</span> idef != <span class="hljs-literal">None</span>:
+                        sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
+                    <span class="hljs-keyword">else</span>:
+                        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Failed to add part <span class="hljs-subst">{prt}</span>&quot;</span>)
 
-<span class="literate-tag-name">&lt;&lt;LDrawFile class&gt;&gt;</span>
-<span class="literate-tag-name">&lt;&lt;LDraw material class&gt;&gt;</span>
+            refresh()
+</code></pre>
 
-<span class="literate-tag-name">&lt;&lt;initialize global variables&gt;&gt;</span>
+</div>
+</div><h3>Loading geometry</h3>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;methods to load geometry&gt;&gt;= </div>
+<div class="code">
+<pre><code>
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_geomety_from_file</span>(<span class="hljs-params">part : LDrawFile, m : Mesh, xforms : <span class="hljs-built_in">list</span></span>):
+    cmds = part.get_commands()
+    <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
+        <span class="hljs-keyword">if</span> cmd.startswith(<span class="hljs-string">&#x27;1&#x27;</span>):
+            d = cmd.split()
+            xform = LDrawXform(cmd)
+            prt = <span class="hljs-string">&#x27; &#x27;</span>.join(d[<span class="hljs-number">14</span>:])
+            _xforms = [xform] + xforms[:]
+            <span class="hljs-keyword">try</span>:
+                part_file = get_ldraw_file(prt)
+            <span class="hljs-keyword">except</span> Exception:
+                <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;\tERR: Failed getting part <span class="hljs-subst">{prt}</span>, skipping&quot;</span>)
+                <span class="hljs-keyword">continue</span>
+            load_geomety_from_file(part_file, m, _xforms)
+        <span class="hljs-keyword">elif</span> cmd.startswith(<span class="hljs-string">&#x27;3&#x27;</span>) <span class="hljs-keyword">or</span> cmd.startswith(<span class="hljs-string">&#x27;4&#x27;</span>):
+            add_poly(m, cmd, xforms)
 
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">refresh</span>():
-    sc.doc.Views.Redraw()
-    Rhino.RhinoApp.Wait()
 
-<span class="hljs-keyword">class</span> <span class="hljs-title class_">LegoXform</span>:
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">add_geometry</span>(<span class="hljs-params">part_name : <span class="hljs-built_in">str</span></span>):
+    <span class="hljs-keyword">global</span> vertidx
+    vertidx = <span class="hljs-number">0</span>
+    name = clean_name(part_name)
+
+    existing_idef = sc.doc.InstanceDefinitions.Find(name)
+    <span class="hljs-keyword">if</span> existing_idef:
+        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;\tSkipping <span class="hljs-subst">{part_name}</span>, instance already created&quot;</span>)
+        <span class="hljs-keyword">return</span>
+    tmesh = Mesh()
+    mesh = Mesh()
+    obattr = ObjectAttributes()
+
+    obattr.Name = name
+    obattr.Visible = <span class="hljs-literal">True</span>
+    obattr.MaterialSource = ObjectMaterialSource.MaterialFromParent
+
+    ldraw_file = get_ldraw_file(part_name)
+    load_geomety_from_file(ldraw_file, tmesh, [id_xform])
+    tmesh.Normals.ComputeNormals()
+    tmesh.Compact()
+
+    meshes = tmesh.SplitDisjointPieces()
+    <span class="hljs-keyword">for</span> submesh <span class="hljs-keyword">in</span> meshes:
+        submesh.Weld(rhmath.ToRadians(<span class="hljs-number">60</span>))
+        submesh.UnifyNormals()
+        mesh.Append(submesh)
+    mesh.Weld(rhmath.ToRadians(<span class="hljs-number">60</span>))
+    mesh.Compact()
+
+    <span class="hljs-keyword">if</span> mesh.Vertices.Count &gt; <span class="hljs-number">0</span> <span class="hljs-keyword">and</span> mesh.Faces.Count &gt; <span class="hljs-number">0</span>:
+        sc.doc.InstanceDefinitions.Add(obattr.Name, <span class="hljs-string">&quot;&quot;</span>, Point3f.Origin, mesh, obattr)
+
+</code></pre>
+
+</div>
+</div><h3>LDrawXform class</h3>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;LDrawXform class&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">LDrawXform</span>:
     <span class="hljs-keyword">def</span> <span class="hljs-title function_">__init__</span>(<span class="hljs-params">self, data : <span class="hljs-built_in">str</span></span>):
         data = data.strip()
         <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(data) &gt; <span class="hljs-number">0</span>:
@@ -467,8 +681,7 @@ rhmath = Rhino.RhinoMath
     <span class="hljs-keyword">def</span> <span class="hljs-title function_">get_xform</span>(<span class="hljs-params">self</span>):
         <span class="hljs-keyword">return</span> self.xform
 
-
-rhino_orient = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
+rhino_orient = LDrawXform(<span class="hljs-string">&quot;&quot;</span>)
 rhino_orient.set_xform(
     Transform.Rotation(
         rhmath.ToRadians(-<span class="hljs-number">90.0</span>),
@@ -476,37 +689,7 @@ rhino_orient.set_xform(
         Point3f.Origin
     )
 )
-id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">clean_name</span>(<span class="hljs-params">part_name</span>):
-    part_name = part_name.removesuffix(<span class="hljs-string">&quot;.dat&quot;</span>)
-    part_name = part_name.removesuffix(<span class="hljs-string">&quot;.DAT&quot;</span>)
-    part_name = part_name.removesuffix(<span class="hljs-string">&quot;.ldr&quot;</span>)
-    part_name = part_name.removesuffix(<span class="hljs-string">&quot;.LDR&quot;</span>)
-    <span class="hljs-keyword">return</span> part_name
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">prepare_parts_dictionary</span>():
-    <span class="hljs-keyword">global</span> lib_path
-    library_path : Path = Path(lib_path)
-    library_path_net : DirectoryInfo = DirectoryInfo(lib_path)
-    all_parts_net = library_path_net.EnumerateFiles(<span class="hljs-string">&quot;*&quot;</span>, SearchOption.AllDirectories)
-    <span class="hljs-keyword">for</span> p <span class="hljs-keyword">in</span> all_parts_net:
-        fn = Path(p.FullName)
-        ldrawfile = LDrawFile(fn)
-        vfiles[ldrawfile.name] = ldrawfile
-        vfiles[ldrawfile.pname] = ldrawfile
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">prepare_idefs_dictionary</span>():
-    <span class="hljs-keyword">for</span> idef <span class="hljs-keyword">in</span> sc.doc.InstanceDefinitions:
-        idefs[idef.Name] = idef
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">update_idefs_dictionary</span>(<span class="hljs-params">part_name</span>):
-    idef_part_name = clean_name(part_name)
-    idef = sc.doc.InstanceDefinitions.Find(idef_part_name)
-    <span class="hljs-keyword">if</span> idef:
-        idefs[idef_part_name] = idef
-        <span class="hljs-keyword">return</span> idef
-    <span class="hljs-keyword">return</span> <span class="hljs-literal">None</span>
+id_xform = LDrawXform(<span class="hljs-string">&quot;&quot;</span>)
 
 <span class="hljs-keyword">def</span> <span class="hljs-title function_">apply_transforms</span>(<span class="hljs-params">v, xforms</span>):
     <span class="hljs-keyword">for</span> xform <span class="hljs-keyword">in</span> xforms:
@@ -520,155 +703,73 @@ id_xform = LegoXform(<span class="hljs-string">&quot;&quot;</span>)
 
    <span class="hljs-keyword">return</span> xform
 
+</code></pre>
+
+</div>
+</div><h2>Misc helper methods</h2>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;misc helper methods&gt;&gt;= </div>
+<div class="code">
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">refresh</span>():
+    sc.doc.Views.Redraw()
+    Rhino.RhinoApp.Wait()
+
+
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">clean_name</span>(<span class="hljs-params">part_name</span>):
+    part_name = part_name.removesuffix(<span class="hljs-string">&quot;.dat&quot;</span>)
+    part_name = part_name.removesuffix(<span class="hljs-string">&quot;.DAT&quot;</span>)
+    part_name = part_name.removesuffix(<span class="hljs-string">&quot;.ldr&quot;</span>)
+    part_name = part_name.removesuffix(<span class="hljs-string">&quot;.LDR&quot;</span>)
+    <span class="hljs-keyword">return</span> part_name
+</code></pre>
+
+</div>
+</div><h2>Pulling all parts together</h2>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;the whole script.*&gt;&gt;= ./src/rhildraw.py $</div>
+<div class="code">
+<pre><code><span class="hljs-keyword">import</span> scriptcontext <span class="hljs-keyword">as</span> sc
+<span class="hljs-keyword">import</span> math
+
+<span class="hljs-keyword">from</span> typing <span class="hljs-keyword">import</span> Mapping, <span class="hljs-type">List</span>
+
+<span class="hljs-keyword">import</span> Rhino
+
+<span class="hljs-keyword">from</span> Rhino.Geometry <span class="hljs-keyword">import</span> Transform, Mesh, Vector3f, Point3f
+<span class="hljs-keyword">from</span> Rhino.Display <span class="hljs-keyword">import</span> Color4f
+<span class="hljs-keyword">from</span> Rhino.DocObjects <span class="hljs-keyword">import</span> ObjectAttributes, ObjectMaterialSource
+<span class="hljs-keyword">from</span> Rhino.DocObjects <span class="hljs-keyword">import</span> InstanceDefinition
+<span class="hljs-keyword">from</span> Rhino.Render <span class="hljs-keyword">import</span> ChildSlotNames, ContentUuids, RenderContentType
+
+PbrNames = ChildSlotNames.PhysicallyBased
+rhmath = Rhino.RhinoMath
+
+<span class="hljs-keyword">from</span> System.IO <span class="hljs-keyword">import</span> DirectoryInfo, Directory, File, FileInfo
+<span class="hljs-keyword">from</span> System.IO <span class="hljs-keyword">import</span> EnumerationOptions, SearchOption
+
+<span class="hljs-keyword">from</span> pathlib <span class="hljs-keyword">import</span> Path
+
+<span class="literate-tag-name">&lt;&lt;LDrawFile class&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;LDraw material class&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;LDrawXform class&gt;&gt;</span>
+
+<span class="literate-tag-name">&lt;&lt;initialize global variables&gt;&gt;</span>
+
+<span class="literate-tag-name">&lt;&lt;misc helper methods&gt;&gt;</span>
+
+<span class="literate-tag-name">&lt;&lt;method to prepare virtual files&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;method to add a virtual file&gt;&gt;</span>
+
+<span class="literate-tag-name">&lt;&lt;method to prepare instance definitions&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;method to update instance definitions&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;method to get InstanceDefinition instance&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;method to get LDrawFile instance&gt;&gt;</span>
+
 <span class="literate-tag-name">&lt;&lt;add polygon method&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;methods to load geometry&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;method to load an assembly&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;method to load a complete model&gt;&gt;</span>
 
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">get_ldraw_file</span>(<span class="hljs-params">part_name : <span class="hljs-built_in">str</span></span>) -&gt; LDrawFile:
-    <span class="hljs-keyword">global</span> vfiles
-
-    part_name = part_name.replace(<span class="hljs-string">&#x27;/&#x27;</span>, <span class="hljs-string">&#x27;\\&#x27;</span>)
-
-    <span class="hljs-keyword">if</span> part_name <span class="hljs-keyword">in</span> vfiles:
-        <span class="hljs-keyword">return</span> vfiles[part_name]
-
-    <span class="hljs-keyword">raise</span> Exception(<span class="hljs-string">f&quot;Part file not found: <span class="hljs-subst">{part_name}</span>&quot;</span>)
-
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_part</span>(<span class="hljs-params">part : LDrawFile, m : Mesh, xforms : <span class="hljs-built_in">list</span></span>):
-    cmds = part.get_commands()
-    <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
-        <span class="hljs-keyword">if</span> cmd.startswith(<span class="hljs-string">&#x27;1&#x27;</span>):
-            d = cmd.split()
-            xform = LegoXform(cmd)
-            prt = <span class="hljs-string">&#x27; &#x27;</span>.join(d[<span class="hljs-number">14</span>:])
-            _xforms = [xform] + xforms[:]
-            <span class="hljs-keyword">try</span>:
-                part_file = get_ldraw_file(prt)
-            <span class="hljs-keyword">except</span> Exception:
-                <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;\tERR: Failed getting part <span class="hljs-subst">{prt}</span>, skipping&quot;</span>)
-                <span class="hljs-keyword">continue</span>
-            load_part(part_file, m, _xforms)
-        <span class="hljs-keyword">elif</span> cmd.startswith(<span class="hljs-string">&#x27;3&#x27;</span>) <span class="hljs-keyword">or</span> cmd.startswith(<span class="hljs-string">&#x27;4&#x27;</span>):
-            add_poly(m, cmd, xforms)
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">get_part_idef</span>(<span class="hljs-params">prt</span>):
-    p = Path(prt)
-    pname = clean_name(p.name)
-    <span class="hljs-keyword">if</span> pname <span class="hljs-keyword">in</span> idefs:
-        <span class="hljs-keyword">return</span> idefs[pname]
-
-    <span class="hljs-keyword">return</span> <span class="hljs-literal">None</span>
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">contains_poly_commands</span>(<span class="hljs-params">cmds</span>):
-    <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
-        <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(cmd) == <span class="hljs-number">0</span>: <span class="hljs-keyword">continue</span>
-        <span class="hljs-keyword">if</span> cmd[<span class="hljs-number">0</span>] <span class="hljs-keyword">in</span> (<span class="hljs-string">&quot;2&quot;</span>, <span class="hljs-string">&quot;3&quot;</span>, <span class="hljs-string">&quot;4&quot;</span>, <span class="hljs-string">&quot;5&quot;</span>):
-            <span class="hljs-keyword">return</span> <span class="hljs-literal">True</span>
-
-    <span class="hljs-keyword">return</span> <span class="hljs-literal">False</span>
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_model_part</span>(<span class="hljs-params">part : LDrawFile, xforms : <span class="hljs-built_in">list</span></span>):
-    cmds = []
-    cmds = part.get_commands()
-
-    cmds = [l <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> cmds <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(l)&gt;<span class="hljs-number">0</span>]
-    <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
-        <span class="hljs-keyword">if</span> cmd.startswith(<span class="hljs-string">&#x27;1&#x27;</span>):
-            d = cmd.split()
-            color_code = d[<span class="hljs-number">1</span>]
-            materials[color_code].create_render_material()
-            rm = materials[color_code].render_material
-            xform = LegoXform(cmd)
-            prt = <span class="hljs-string">&#x27; &#x27;</span>.join(d[<span class="hljs-number">14</span>:])
-            _xforms = xforms[:] + [xform]
-
-            obattr = ObjectAttributes()
-            obattr.Name = clean_name(prt)
-            obattr.Visible = <span class="hljs-literal">True</span>
-            obattr.MaterialSource = ObjectMaterialSource.MaterialFromObject
-            obattr.RenderMaterial = rm
-
-            <span class="hljs-keyword">if</span> prt.lower().endswith(<span class="hljs-string">&quot;.ldr&quot;</span>):
-                ldr_file = get_ldraw_file(prt)
-                <span class="hljs-keyword">if</span> contains_poly_commands(ldr_file.get_commands()):
-                    add_part(prt)
-                    idef = update_idefs_dictionary(prt)
-                    <span class="hljs-keyword">if</span> idef != <span class="hljs-literal">None</span>:
-                        xform = collate_transforms(_xforms)
-                        sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
-                    <span class="hljs-keyword">else</span>:
-                        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Couldn&#x27;t add part <span class="hljs-subst">{prt}</span>&quot;</span>)
-                <span class="hljs-keyword">else</span>:
-                    load_model_part(ldr_file, _xforms)
-            <span class="hljs-keyword">else</span>:
-                idef = get_part_idef(prt)
-                xform = collate_transforms(_xforms)
-                <span class="hljs-keyword">if</span> idef != <span class="hljs-literal">None</span>:
-                    sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
-                <span class="hljs-keyword">else</span>:
-                    add_part(prt)
-                    idef = update_idefs_dictionary(prt)
-                    <span class="hljs-keyword">if</span> idef != <span class="hljs-literal">None</span>:
-                        sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
-                    <span class="hljs-keyword">else</span>:
-                        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Failed to add part <span class="hljs-subst">{prt}</span>&quot;</span>)
-
-            refresh()
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">add_virtual_file</span>(<span class="hljs-params">model : Path, filename : <span class="hljs-built_in">str</span>, data : <span class="hljs-type">List</span>[<span class="hljs-built_in">str</span>]</span>):
-    virtual_file_path = model.parent / <span class="hljs-string">&#x27;virtual&#x27;</span> / filename
-    virtual_file = LDrawFile(virtual_file_path, data)
-    vfiles[virtual_file.name] = virtual_file
-    vfiles[virtual_file.pname] = virtual_file
-
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_model</span>(<span class="hljs-params">model : LDrawFile</span>):
-    lines = model.get_commands()
-
-    FILE_START = <span class="hljs-string">&#x27;0 FILE &#x27;</span>
-    first_file = <span class="hljs-string">&#x27;&#x27;</span>
-    <span class="hljs-keyword">if</span> model.suffix.lower() == <span class="hljs-string">&#x27;.mpd&#x27;</span>:
-        
-        cur_file = <span class="hljs-string">&#x27;&#x27;</span>
-        file_data = []
-        <span class="hljs-keyword">for</span> l <span class="hljs-keyword">in</span> lines:
-            <span class="hljs-keyword">if</span> l.startswith(FILE_START):
-                <span class="hljs-keyword">if</span> cur_file != <span class="hljs-string">&#x27;&#x27;</span>:
-                    add_virtual_file(model.path, cur_file, file_data)
-                <span class="hljs-keyword">if</span> cur_file == <span class="hljs-string">&#x27;&#x27;</span>:
-                    first_file = l[<span class="hljs-built_in">len</span>(FILE_START):]
-                cur_file = l[<span class="hljs-built_in">len</span>(FILE_START):]
-                file_data = [l]
-            <span class="hljs-keyword">else</span>:
-                file_data.append(l)
-        add_virtual_file(model.path, cur_file, file_data) 
-    start_part = get_ldraw_file(first_file)
-
-    load_model_part(start_part, [rhino_orient])
-
-
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">add_part</span>(<span class="hljs-params">part_name : <span class="hljs-built_in">str</span></span>):
-    <span class="hljs-keyword">global</span> vertidx
-    vertidx = <span class="hljs-number">0</span>
-    name = clean_name(part_name)
-
-    existing_idef = sc.doc.InstanceDefinitions.Find(name)
-    <span class="hljs-keyword">if</span> existing_idef:
-        <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;\tSkipping <span class="hljs-subst">{part_name}</span>, instance already created&quot;</span>)
-        <span class="hljs-keyword">return</span>
-    mesh = Mesh()
-    obattr = ObjectAttributes()
-
-    obattr.Name = name
-    obattr.Visible = <span class="hljs-literal">True</span>
-    obattr.MaterialSource = ObjectMaterialSource.MaterialFromParent
-
-    ldraw_file = get_ldraw_file(part_name)
-    load_part(ldraw_file, mesh, [id_xform])
-    mesh.Normals.ComputeNormals()
-    mesh.Compact()
-
-    <span class="hljs-keyword">if</span> mesh.Vertices.Count &gt; <span class="hljs-number">0</span> <span class="hljs-keyword">and</span> mesh.Faces.Count &gt; <span class="hljs-number">0</span>:
-        sc.doc.InstanceDefinitions.Add(obattr.Name, <span class="hljs-string">&quot;&quot;</span>, Point3f.Origin, mesh, obattr)
 <span class="literate-tag-name">&lt;&lt;initialize color definitions&gt;&gt;</span>
 
 sc.doc.Views.EnableRedraw(<span class="hljs-literal">False</span>, <span class="hljs-literal">False</span>, <span class="hljs-literal">False</span>)
@@ -680,8 +781,8 @@ sc.doc.Views.EnableRedraw(<span class="hljs-literal">False</span>, <span class="
 
 
 
-lib_path = <span class="hljs-string">&quot;/Users/jesterking/Documents/brickdat/ldraw&quot;</span>
 
+lib_path = <span class="hljs-string">&quot;e:/dev/brickdat/ldraw&quot;</span>
 
 prepare_parts_dictionary()
 prepare_idefs_dictionary()
@@ -691,18 +792,6 @@ load_colors()
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-fl : Path = vfiles[<span class="hljs-string">&quot;10252-1.mpd&quot;</span>]
 fl : Path = vfiles[<span class="hljs-string">&quot;885-1.mpd&quot;</span>]
 load_model(fl)
 

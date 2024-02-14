@@ -45,6 +45,15 @@ class LDrawFile:
                 self.commands = cmds
     
         return self.commands
+    def contains_poly_commands(self):
+        cmds = self.get_commands()
+        for cmd in cmds:
+            if len(cmd) == 0: continue
+            if cmd[0] in ("2", "3", "4", "5"):
+                return True
+    
+        return False
+
 class LDrawMaterial:
     def __init__(self, props):
         self.properties = props
@@ -101,20 +110,7 @@ class LDrawMaterial:
         self.render_material = pbr_rm
         sc.doc.RenderMaterials.Add(pbr_rm)
 
-
-
-# Globals
-vfiles: Mapping[str, LDrawFile]= dict()
-idefs : Mapping[str, InstanceDefinition]= dict()
-materials : Mapping[str, LDrawMaterial]= dict()
-vertidx = 0
-pbr_guid = ContentUuids.PhysicallyBasedMaterialType
-
-def refresh():
-    sc.doc.Views.Redraw()
-    Rhino.RhinoApp.Wait()
-
-class LegoXform:
+class LDrawXform:
     def __init__(self, data : str):
         data = data.strip()
         if len(data) > 0:
@@ -162,8 +158,7 @@ class LegoXform:
     def get_xform(self):
         return self.xform
 
-
-rhino_orient = LegoXform("")
+rhino_orient = LDrawXform("")
 rhino_orient.set_xform(
     Transform.Rotation(
         rhmath.ToRadians(-90.0),
@@ -171,7 +166,33 @@ rhino_orient.set_xform(
         Point3f.Origin
     )
 )
-id_xform = LegoXform("")
+id_xform = LDrawXform("")
+
+def apply_transforms(v, xforms):
+    for xform in xforms:
+        v = xform.transform_point(*v)
+    return v
+
+def collate_transforms(xforms):
+   xform = Transform.Identity
+   for _xform in xforms:
+       xform = xform * _xform.get_xform()
+
+   return xform
+
+
+
+# Globals
+vfiles: Mapping[str, LDrawFile]= dict()
+idefs : Mapping[str, InstanceDefinition]= dict()
+materials : Mapping[str, LDrawMaterial]= dict()
+vertidx = 0
+pbr_guid = ContentUuids.PhysicallyBasedMaterialType
+
+def refresh():
+    sc.doc.Views.Redraw()
+    Rhino.RhinoApp.Wait()
+
 
 def clean_name(part_name):
     part_name = part_name.removesuffix(".dat")
@@ -190,11 +211,15 @@ def prepare_parts_dictionary():
         ldrawfile = LDrawFile(fn)
         vfiles[ldrawfile.name] = ldrawfile
         vfiles[ldrawfile.pname] = ldrawfile
+def add_virtual_file(model : Path, filename : str, data : List[str]):
+    virtual_file_path = model.parent / 'virtual' / filename
+    virtual_file = LDrawFile(virtual_file_path, data)
+    vfiles[virtual_file.name] = virtual_file
+    vfiles[virtual_file.pname] = virtual_file
 
 def prepare_idefs_dictionary():
     for idef in sc.doc.InstanceDefinitions:
         idefs[idef.Name] = idef
-
 def update_idefs_dictionary(part_name):
     idef_part_name = clean_name(part_name)
     idef = sc.doc.InstanceDefinitions.Find(idef_part_name)
@@ -202,18 +227,22 @@ def update_idefs_dictionary(part_name):
         idefs[idef_part_name] = idef
         return idef
     return None
+def get_part_idef(prt):
+    p = Path(prt)
+    pname = clean_name(p.name)
+    if pname in idefs:
+        return idefs[pname]
 
-def apply_transforms(v, xforms):
-    for xform in xforms:
-        v = xform.transform_point(*v)
-    return v
+    return None
+def get_ldraw_file(part_name : str) -> LDrawFile:
+    global vfiles
 
-def collate_transforms(xforms):
-   xform = Transform.Identity
-   for _xform in xforms:
-       xform = xform * _xform.get_xform()
+    part_name = part_name.replace('/', '\\')
 
-   return xform
+    if part_name in vfiles:
+        return vfiles[part_name]
+
+    raise Exception(f"Part file not found: {part_name}")
 
 def add_poly(m : Mesh, cmd : str, xforms : list):
     global vertidx
@@ -236,23 +265,12 @@ def add_poly(m : Mesh, cmd : str, xforms : list):
     elif vertices == 3:
         m.Faces.AddFace(vertidx - 3, vertidx - 2, vertidx - 1)
 
-def get_ldraw_file(part_name : str) -> LDrawFile:
-    global vfiles
-
-    part_name = part_name.replace('/', '\\')
-
-    if part_name in vfiles:
-        return vfiles[part_name]
-
-    raise Exception(f"Part file not found: {part_name}")
-
-
-def load_part(part : LDrawFile, m : Mesh, xforms : list):
+def load_geomety_from_file(part : LDrawFile, m : Mesh, xforms : list):
     cmds = part.get_commands()
     for cmd in cmds:
         if cmd.startswith('1'):
             d = cmd.split()
-            xform = LegoXform(cmd)
+            xform = LDrawXform(cmd)
             prt = ' '.join(d[14:])
             _xforms = [xform] + xforms[:]
             try:
@@ -260,27 +278,45 @@ def load_part(part : LDrawFile, m : Mesh, xforms : list):
             except Exception:
                 print(f"\tERR: Failed getting part {prt}, skipping")
                 continue
-            load_part(part_file, m, _xforms)
+            load_geomety_from_file(part_file, m, _xforms)
         elif cmd.startswith('3') or cmd.startswith('4'):
             add_poly(m, cmd, xforms)
 
-def get_part_idef(prt):
-    p = Path(prt)
-    pname = clean_name(p.name)
-    if pname in idefs:
-        return idefs[pname]
 
-    return None
+def add_geometry(part_name : str):
+    global vertidx
+    vertidx = 0
+    name = clean_name(part_name)
 
-def contains_poly_commands(cmds):
-    for cmd in cmds:
-        if len(cmd) == 0: continue
-        if cmd[0] in ("2", "3", "4", "5"):
-            return True
+    existing_idef = sc.doc.InstanceDefinitions.Find(name)
+    if existing_idef:
+        print(f"\tSkipping {part_name}, instance already created")
+        return
+    tmesh = Mesh()
+    mesh = Mesh()
+    obattr = ObjectAttributes()
 
-    return False
+    obattr.Name = name
+    obattr.Visible = True
+    obattr.MaterialSource = ObjectMaterialSource.MaterialFromParent
 
-def load_model_part(part : LDrawFile, xforms : list):
+    ldraw_file = get_ldraw_file(part_name)
+    load_geomety_from_file(ldraw_file, tmesh, [id_xform])
+    tmesh.Normals.ComputeNormals()
+    tmesh.Compact()
+
+    meshes = tmesh.SplitDisjointPieces()
+    for submesh in meshes:
+        submesh.Weld(rhmath.ToRadians(60))
+        submesh.UnifyNormals()
+        mesh.Append(submesh)
+    mesh.Weld(rhmath.ToRadians(60))
+    mesh.Compact()
+
+    if mesh.Vertices.Count > 0 and mesh.Faces.Count > 0:
+        sc.doc.InstanceDefinitions.Add(obattr.Name, "", Point3f.Origin, mesh, obattr)
+
+def load_assembly(part : LDrawFile, xforms : list):
     cmds = []
     cmds = part.get_commands()
 
@@ -291,7 +327,7 @@ def load_model_part(part : LDrawFile, xforms : list):
             color_code = d[1]
             materials[color_code].create_render_material()
             rm = materials[color_code].render_material
-            xform = LegoXform(cmd)
+            xform = LDrawXform(cmd)
             prt = ' '.join(d[14:])
             _xforms = xforms[:] + [xform]
 
@@ -303,8 +339,8 @@ def load_model_part(part : LDrawFile, xforms : list):
 
             if prt.lower().endswith(".ldr"):
                 ldr_file = get_ldraw_file(prt)
-                if contains_poly_commands(ldr_file.get_commands()):
-                    add_part(prt)
+                if ldr_file.contains_poly_commands():
+                    add_geometry(prt)
                     idef = update_idefs_dictionary(prt)
                     if idef != None:
                         xform = collate_transforms(_xforms)
@@ -312,14 +348,14 @@ def load_model_part(part : LDrawFile, xforms : list):
                     else:
                         print(f"Couldn't add part {prt}")
                 else:
-                    load_model_part(ldr_file, _xforms)
+                    load_assembly(ldr_file, _xforms)
             else:
                 idef = get_part_idef(prt)
                 xform = collate_transforms(_xforms)
                 if idef != None:
                     sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
                 else:
-                    add_part(prt)
+                    add_geometry(prt)
                     idef = update_idefs_dictionary(prt)
                     if idef != None:
                         sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
@@ -327,14 +363,6 @@ def load_model_part(part : LDrawFile, xforms : list):
                         print(f"Failed to add part {prt}")
 
             refresh()
-
-def add_virtual_file(model : Path, filename : str, data : List[str]):
-    virtual_file_path = model.parent / 'virtual' / filename
-    virtual_file = LDrawFile(virtual_file_path, data)
-    vfiles[virtual_file.name] = virtual_file
-    vfiles[virtual_file.pname] = virtual_file
-
-
 def load_model(model : LDrawFile):
     lines = model.get_commands()
 
@@ -357,32 +385,8 @@ def load_model(model : LDrawFile):
         add_virtual_file(model.path, cur_file, file_data) # last file
     start_part = get_ldraw_file(first_file)
 
-    load_model_part(start_part, [rhino_orient])
+    load_assembly(start_part, [rhino_orient])
 
-
-def add_part(part_name : str):
-    global vertidx
-    vertidx = 0
-    name = clean_name(part_name)
-
-    existing_idef = sc.doc.InstanceDefinitions.Find(name)
-    if existing_idef:
-        print(f"\tSkipping {part_name}, instance already created")
-        return
-    mesh = Mesh()
-    obattr = ObjectAttributes()
-
-    obattr.Name = name
-    obattr.Visible = True
-    obattr.MaterialSource = ObjectMaterialSource.MaterialFromParent
-
-    ldraw_file = get_ldraw_file(part_name)
-    load_part(ldraw_file, mesh, [id_xform])
-    mesh.Normals.ComputeNormals()
-    mesh.Compact()
-
-    if mesh.Vertices.Count > 0 and mesh.Faces.Count > 0:
-        sc.doc.InstanceDefinitions.Add(obattr.Name, "", Point3f.Origin, mesh, obattr)
 def load_colors():
     colorldr = get_ldraw_file("LDConfig.ldr")
     cmds = colorldr.get_commands()
@@ -411,29 +415,17 @@ sc.doc.Views.EnableRedraw(False, False, False)
 ## Use always forward slashes, also for
 ## folders on Windows
 ###########################################
-lib_path = "/Users/jesterking/Documents/brickdat/ldraw"
-#lib_path = "e:/dev/brickdat/ldraw"
+#lib_path = "/Users/jesterking/Documents/brickdat/ldraw"
+lib_path = "e:/dev/brickdat/ldraw"
 
 prepare_parts_dictionary()
 prepare_idefs_dictionary()
 load_colors()
 
-#fl : Path = vfiles["885-1.mpd"]
-#fl : Path = vfiles["8836-1.mpd"]
-#fl : Path = vfiles["10019-1.mpd"]
-#fl : Path = vfiles["10030-1.mpd"]
-#fl : Path = vfiles["10143-1.mpd"]
-#fl : Path = vfiles["75969-1.mpd"]
-#fl : Path = vfiles["31048-1.mpd"]
-#fl : Path = vfiles["3063-1.mpd"]
-#fl : Path = vfiles["42064-1.mpd"]
-
-
 ###########################################
 ## Specify what model to load. Use just the
 ## file name (including extension)
 ###########################################
-fl : Path = vfiles["10252-1.mpd"]
 fl : Path = vfiles["885-1.mpd"]
 load_model(fl)
 
