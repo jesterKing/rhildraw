@@ -412,6 +412,9 @@ def load_colors():
             materials[properties["CODE"]] = ldraw_material
     print("Colors read")
 
+# If you want to see the model "build" while
+# the script imports comment the following line
+# out, or set every False to True
 sc.doc.Views.EnableRedraw(False, False, False)
 
 ###########################################
