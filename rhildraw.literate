@@ -20,6 +20,9 @@ This literate document is still rough around the edges and needs some more Time
 Love and Care to massage it for better readability. I hope however that we all
 can enjoy reading this already.
 
+The repository for this literate program is at
+https://github.com/jesterKing/rhildraw
+
 ## TLDR
 
 If you don't feel like reading documentation much you can skip ahead and just go
@@ -837,5 +840,3 @@ Rhino.RhinoApp.RunScript("ZEA", False)
 print("Done")
 
 ```
-
-
