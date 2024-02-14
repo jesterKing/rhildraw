@@ -181,7 +181,6 @@ def collate_transforms(xforms):
    return xform
 
 
-
 # Globals
 vfiles: Mapping[str, LDrawFile]= dict()
 idefs : Mapping[str, InstanceDefinition]= dict()
@@ -192,7 +191,6 @@ pbr_guid = ContentUuids.PhysicallyBasedMaterialType
 def refresh():
     sc.doc.Views.Redraw()
     Rhino.RhinoApp.Wait()
-
 
 def clean_name(part_name):
     part_name = part_name.removesuffix(".dat")
@@ -264,7 +262,6 @@ def add_poly(m : Mesh, cmd : str, xforms : list):
         m.Faces.AddFace(vertidx - 4, vertidx - 3, vertidx - 2, vertidx - 1)
     elif vertices == 3:
         m.Faces.AddFace(vertidx - 3, vertidx - 2, vertidx - 1)
-
 def load_geomety_from_file(part : LDrawFile, m : Mesh, xforms : list):
     cmds = part.get_commands()
     for cmd in cmds:

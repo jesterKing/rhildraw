@@ -282,7 +282,15 @@ short-handed in `pbr_guid`.
 pbr_guid = ContentUuids.PhysicallyBasedMaterialType
 ```
 
-## Reading files
+## Virtual file system
+
+The importer uses a simple virtual file system. It is really not more than a
+mapping of file names to `LDrawFile` instances. For physical files on the actual
+file system they will be initialized with a full path to a file. But there are
+also virtual files that we insert into the system so we can make the access to
+either file type simple and look the same.
+
+### Reading files
 
 All LDraw files consist of lines where each line is of a certain line type. Each
 line type denotes a command. All LDraw files have these line types, so it is
@@ -296,6 +304,8 @@ However, the following are well-established conventions. The `.dat` file is used
 to define geometry of parts and subparts. The `.ldr` files often contain
 commands to load parts, they express assemblies or models. The `.mpd` is a form
 of multi-part document, where in one file several files are combined.
+
+### LDrawFile class
 
 In our script we represent LDraw files with the class `LDrawFile`. The class
 itself is very simple. It has only a method for
@@ -369,7 +379,7 @@ definition language. Eventually we may want to include also 2 and 5 lines, but
 for just importing complete models for set dressing and rendering purposes this
 should get us going.
 
-Line types 3 and 4 add polygon methods, triangles and quads respectively.
+Line types 3 and 4 method to add a polygons, triangles and quads respectively.
 
 ## Adding polygons
 
@@ -435,7 +445,7 @@ To bring it all together we can say that to add a polygon from a command string
 we first `<<parse vertex count>>` and `<<parse vertices>>`, then
 `<<add vertices to mesh>>` followed by the final step `<<add face to mesh>>`.
 
-``` py : <<add polygon method>>=
+``` py : <<method to add a polygon>>=
 def add_poly(m : Mesh, cmd : str, xforms : list):
     global vertidx
     stride = 3
@@ -540,8 +550,25 @@ def load_assembly(part : LDrawFile, xforms : list):
 
 ### Loading geometry
 
-``` py : <<methods to load geometry>>=
+Actual geometry data is recorded in the `.dat` files. As all files they can
+reference other files, the assumption is made that only `.dat` files are
+referenced from `.dat` files. Also the assumption is that no `.dat` file has
+been generated that references itself. That would currently lead to an infinite
+loop, so something to improve on in the future.
 
+For `.dat` files we'll look only at line type 1, 3 and 4. When seeing a line
+type 1 we'll find the `LDrawFile` specified by the command and recurse into
+`load_geometry_from_file` to load that part.
+
+Line types 3 and 4 will be passed on to the `<<method to add a polygon>>`.
+
+All these methods will be adding to the same `Mesh` instance.
+
+The entry-point for adding geometry is really the `add_geometry` method, which
+is given only the part name. If an existing instance definition with the cleaned
+name is found that will be used with an early exit out of the method.
+
+``` py : <<methods to load geometry>>=
 def load_geomety_from_file(part : LDrawFile, m : Mesh, xforms : list):
     cmds = part.get_commands()
     for cmd in cmds:
@@ -582,20 +609,44 @@ def add_geometry(part_name : str):
     tmesh.Normals.ComputeNormals()
     tmesh.Compact()
 
-    meshes = tmesh.SplitDisjointPieces()
-    for submesh in meshes:
-        submesh.Weld(rhmath.ToRadians(60))
-        submesh.UnifyNormals()
-        mesh.Append(submesh)
-    mesh.Weld(rhmath.ToRadians(60))
-    mesh.Compact()
+    <<weld mesh data>>
 
     if mesh.Vertices.Count > 0 and mesh.Faces.Count > 0:
         sc.doc.InstanceDefinitions.Add(obattr.Name, "", Point3f.Origin, mesh, obattr)
 
 ```
 
+#### Welding geometry
+
+Next to actually reading in the geometry data and constructing a mesh out of it
+the `add_geometry` commanda also does `<<weld mesh data>>`. The geometry defined
+in `.dat` files is typically fairly coarse and does not include information
+about normals. Doing a double step of first welding disjoin mesh parts, then
+welding again with all the pieces put back together again gives relatively good
+looking pieces in most cases.
+
+``` py : <<weld mesh data>>=
+meshes = tmesh.SplitDisjointPieces()
+for submesh in meshes:
+    submesh.Weld(rhmath.ToRadians(60))
+    submesh.UnifyNormals()
+    mesh.Append(submesh)
+mesh.Weld(rhmath.ToRadians(60))
+mesh.Compact()
+```
+
+Be mindful though that this won't always work with every part geometry. For
+instance minifig heads won't necessarily look always great. It all depends on
+how the geometry was encoded in the `.dat` file.
+
 ### LDrawXform class
+
+The `LDrawXform` class is a simple helper class to handle conversion from the
+`LDraw` transformation encoding in line types to `Rhino.Geometry.Transform` and
+use those to apply the transforms expressed in a model and related files.
+
+The main point is that the X, Y, Z coordinates of a command go in the right-most
+column of a Rhino transform.
 
 ``` py : <<LDrawXform class>>=
 class LDrawXform:
@@ -667,8 +718,11 @@ def collate_transforms(xforms):
        xform = xform * _xform.get_xform()
 
    return xform
-
 ```
+
+`LDraw` files are created with the Y axis up, so we have a `rhino_orient`
+transform that will be given to the top `<<method to load a complete model>>` so
+that the end result will be rotated properly to the Rhino Z-axis up world.
 
 ## Misc helper methods
 
@@ -676,7 +730,6 @@ def collate_transforms(xforms):
 def refresh():
     sc.doc.Views.Redraw()
     Rhino.RhinoApp.Wait()
-
 
 def clean_name(part_name):
     part_name = part_name.removesuffix(".dat")
@@ -726,7 +779,7 @@ from pathlib import Path
 <<method to get InstanceDefinition instance>>
 <<method to get LDrawFile instance>>
 
-<<add polygon method>>
+<<method to add a polygon>>
 <<methods to load geometry>>
 <<method to load an assembly>>
 <<method to load a complete model>>

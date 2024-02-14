@@ -308,7 +308,13 @@ short-handed in <code>pbr_guid</code>.</p>
 </code></pre>
 
 </div>
-</div><h2>Reading files</h2>
+</div><h2>Virtual file system</h2>
+<p>The importer uses a simple virtual file system. It is really not more than a
+mapping of file names to <code>LDrawFile</code> instances. For physical files on the actual
+file system they will be initialized with a full path to a file. But there are
+also virtual files that we insert into the system so we can make the access to
+either file type simple and look the same.</p>
+<h3>Reading files</h3>
 <p>All LDraw files consist of lines where each line is of a certain line type. Each
 line type denotes a command. All LDraw files have these line types, so it is
 easy to parse them.</p>
@@ -319,6 +325,7 @@ doesn't really matter.</p>
 to define geometry of parts and subparts. The <code>.ldr</code> files often contain
 commands to load parts, they express assemblies or models. The <code>.mpd</code> is a form
 of multi-part document, where in one file several files are combined.</p>
+<h3>LDrawFile class</h3>
 <p>In our script we represent LDraw files with the class <code>LDrawFile</code>. The class
 itself is very simple. It has only a method for
 <code>&lt;&lt;initialization of LDrawFile&gt;&gt;</code> and a method to
@@ -394,7 +401,7 @@ implement mainly line types 3, 4 and 1, with a smidge of 0 through the color
 definition language. Eventually we may want to include also 2 and 5 lines, but
 for just importing complete models for set dressing and rendering purposes this
 should get us going.</p>
-<p>Line types 3 and 4 add polygon methods, triangles and quads respectively.</p>
+<p>Line types 3 and 4 method to add a polygons, triangles and quads respectively.</p>
 <h2>Adding polygons</h2>
 <p>Handling line types 3 and 4 means adding either a triangle or a quad. The form
 of line types 3 and 4 are similar. A line type three starts with the number <code>3</code>
@@ -462,7 +469,7 @@ definition for either the triangle or the quad.</p>
 we first <code>&lt;&lt;parse vertex count&gt;&gt;</code> and <code>&lt;&lt;parse vertices&gt;&gt;</code>, then
 <code>&lt;&lt;add vertices to mesh&gt;&gt;</code> followed by the final step <code>&lt;&lt;add face to mesh&gt;&gt;</code>.</p>
 <div class="codefragment">
-<div class="fragmentname">&lt;&lt;add polygon method&gt;&gt;= </div>
+<div class="fragmentname">&lt;&lt;method to add a polygon&gt;&gt;= </div>
 <div class="code">
 <pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">add_poly</span>(<span class="hljs-params">m : Mesh, cmd : <span class="hljs-built_in">str</span>, xforms : <span class="hljs-built_in">list</span></span>):
     <span class="hljs-keyword">global</span> vertidx
@@ -571,11 +578,23 @@ flowchart
 
 </div>
 </div><h3>Loading geometry</h3>
+<p>Actual geometry data is recorded in the <code>.dat</code> files. As all files they can
+reference other files, the assumption is made that only <code>.dat</code> files are
+referenced from <code>.dat</code> files. Also the assumption is that no <code>.dat</code> file has
+been generated that references itself. That would currently lead to an infinite
+loop, so something to improve on in the future.</p>
+<p>For <code>.dat</code> files we'll look only at line type 1, 3 and 4. When seeing a line
+type 1 we'll find the <code>LDrawFile</code> specified by the command and recurse into
+<code>load_geometry_from_file</code> to load that part.</p>
+<p>Line types 3 and 4 will be passed on to the <code>&lt;&lt;method to add a polygon&gt;&gt;</code>.</p>
+<p>All these methods will be adding to the same <code>Mesh</code> instance.</p>
+<p>The entry-point for adding geometry is really the <code>add_geometry</code> method, which
+is given only the part name. If an existing instance definition with the cleaned
+name is found that will be used with an early exit out of the method.</p>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;methods to load geometry&gt;&gt;= </div>
 <div class="code">
-<pre><code>
-<span class="hljs-keyword">def</span> <span class="hljs-title function_">load_geomety_from_file</span>(<span class="hljs-params">part : LDrawFile, m : Mesh, xforms : <span class="hljs-built_in">list</span></span>):
+<pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">load_geomety_from_file</span>(<span class="hljs-params">part : LDrawFile, m : Mesh, xforms : <span class="hljs-built_in">list</span></span>):
     cmds = part.get_commands()
     <span class="hljs-keyword">for</span> cmd <span class="hljs-keyword">in</span> cmds:
         <span class="hljs-keyword">if</span> cmd.startswith(<span class="hljs-string">&#x27;1&#x27;</span>):
@@ -615,13 +634,7 @@ flowchart
     tmesh.Normals.ComputeNormals()
     tmesh.Compact()
 
-    meshes = tmesh.SplitDisjointPieces()
-    <span class="hljs-keyword">for</span> submesh <span class="hljs-keyword">in</span> meshes:
-        submesh.Weld(rhmath.ToRadians(<span class="hljs-number">60</span>))
-        submesh.UnifyNormals()
-        mesh.Append(submesh)
-    mesh.Weld(rhmath.ToRadians(<span class="hljs-number">60</span>))
-    mesh.Compact()
+    <span class="literate-tag-name">&lt;&lt;weld mesh data&gt;&gt;</span>
 
     <span class="hljs-keyword">if</span> mesh.Vertices.Count &gt; <span class="hljs-number">0</span> <span class="hljs-keyword">and</span> mesh.Faces.Count &gt; <span class="hljs-number">0</span>:
         sc.doc.InstanceDefinitions.Add(obattr.Name, <span class="hljs-string">&quot;&quot;</span>, Point3f.Origin, mesh, obattr)
@@ -629,7 +642,35 @@ flowchart
 </code></pre>
 
 </div>
-</div><h3>LDrawXform class</h3>
+</div><h4>Welding geometry</h4>
+<p>Next to actually reading in the geometry data and constructing a mesh out of it
+the <code>add_geometry</code> commanda also does <code>&lt;&lt;weld mesh data&gt;&gt;</code>. The geometry defined
+in <code>.dat</code> files is typically fairly coarse and does not include information
+about normals. Doing a double step of first welding disjoin mesh parts, then
+welding again with all the pieces put back together again gives relatively good
+looking pieces in most cases.</p>
+<div class="codefragment">
+<div class="fragmentname">&lt;&lt;weld mesh data&gt;&gt;= </div>
+<div class="code">
+<pre><code>meshes = tmesh.SplitDisjointPieces()
+<span class="hljs-keyword">for</span> submesh <span class="hljs-keyword">in</span> meshes:
+    submesh.Weld(rhmath.ToRadians(<span class="hljs-number">60</span>))
+    submesh.UnifyNormals()
+    mesh.Append(submesh)
+mesh.Weld(rhmath.ToRadians(<span class="hljs-number">60</span>))
+mesh.Compact()
+</code></pre>
+
+</div>
+</div><p>Be mindful though that this won't always work with every part geometry. For
+instance minifig heads won't necessarily look always great. It all depends on
+how the geometry was encoded in the <code>.dat</code> file.</p>
+<h3>LDrawXform class</h3>
+<p>The <code>LDrawXform</code> class is a simple helper class to handle conversion from the
+<code>LDraw</code> transformation encoding in line types to <code>Rhino.Geometry.Transform</code> and
+use those to apply the transforms expressed in a model and related files.</p>
+<p>The main point is that the X, Y, Z coordinates of a command go in the right-most
+column of a Rhino transform.</p>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;LDrawXform class&gt;&gt;= </div>
 <div class="code">
@@ -702,18 +743,19 @@ id_xform = LDrawXform(<span class="hljs-string">&quot;&quot;</span>)
        xform = xform * _xform.get_xform()
 
    <span class="hljs-keyword">return</span> xform
-
 </code></pre>
 
 </div>
-</div><h2>Misc helper methods</h2>
+</div><p><code>LDraw</code> files are created with the Y axis up, so we have a <code>rhino_orient</code>
+transform that will be given to the top <code>&lt;&lt;method to load a complete model&gt;&gt;</code> so
+that the end result will be rotated properly to the Rhino Z-axis up world.</p>
+<h2>Misc helper methods</h2>
 <div class="codefragment">
 <div class="fragmentname">&lt;&lt;misc helper methods&gt;&gt;= </div>
 <div class="code">
 <pre><code><span class="hljs-keyword">def</span> <span class="hljs-title function_">refresh</span>():
     sc.doc.Views.Redraw()
     Rhino.RhinoApp.Wait()
-
 
 <span class="hljs-keyword">def</span> <span class="hljs-title function_">clean_name</span>(<span class="hljs-params">part_name</span>):
     part_name = part_name.removesuffix(<span class="hljs-string">&quot;.dat&quot;</span>)
@@ -765,7 +807,7 @@ rhmath = Rhino.RhinoMath
 <span class="literate-tag-name">&lt;&lt;method to get InstanceDefinition instance&gt;&gt;</span>
 <span class="literate-tag-name">&lt;&lt;method to get LDrawFile instance&gt;&gt;</span>
 
-<span class="literate-tag-name">&lt;&lt;add polygon method&gt;&gt;</span>
+<span class="literate-tag-name">&lt;&lt;method to add a polygon&gt;&gt;</span>
 <span class="literate-tag-name">&lt;&lt;methods to load geometry&gt;&gt;</span>
 <span class="literate-tag-name">&lt;&lt;method to load an assembly&gt;&gt;</span>
 <span class="literate-tag-name">&lt;&lt;method to load a complete model&gt;&gt;</span>
