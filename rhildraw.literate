@@ -1,5 +1,8 @@
 # LDraw into Rhino 3D
 
+* LDraw file format documentation, see File Format Specification: https://www.ldraw.org/article/218.html
+* Colors see Colour Definition Language Extension: https://www.ldraw.org/article/299.html
+
 LEGO models can be described in the LDraw format. The file format was developed
 by James Jessiman in 1995. Since then this has become a defacto standard for
 creating LEGO models on computers.
@@ -7,35 +10,6 @@ creating LEGO models on computers.
 This program `rhildraw` is a simple importer of LDraw files. A model can be
 described by one or more files. We'll get to the details of these files as we go
 on our journey to implementing the importer.
-
-By the time you get to the end you should have had a chance to read my thoughts
-on the implementation and see the code.
-
-This literate document is still rough around the edges and needs some more Time
-Love and Care to massage it for better readability. I hope however that we all
-can enjoy reading this already.
-
-The repository for this literate program is at
-[https://github.com/jesterKing/rhildraw](https://github.com/jesterKing/rhildraw)
-
-## TLDR
-
-If you don't feel like reading documentation much you can skip ahead and just go
-straight to the [generated
-script](https://github.com/jesterKing/rhildraw/blob/main/src/rhildraw.py).
-
-## Related documents
-
-Here a couple of links to the specifications on [LDraw.org](https://www.ldraw.org)
-
-* LDraw file format documentation, see [File Format
-  Specification](https://www.ldraw.org/article/218.html)
-* Colors see [Colour Definition Language
-  Extension](https://www.ldraw.org/article/299.html)
-
-## Installation and Usage
-
-TBD
 
 ## Overview of the program
 
@@ -86,78 +60,6 @@ vfiles: Mapping[str, LDrawFile]= dict()
 idefs : Mapping[str, InstanceDefinition]= dict()
 materials : Mapping[str, LDrawMaterial]= dict()
 vertidx = 0
-zoom_extents = False
-```
-
-### Preparing the virtual file system
-
-``` py : <<method to prepare virtual files>>=
-def prepare_parts_dictionary():
-    global lib_path
-    library_path : Path = Path(lib_path)
-    library_path_net : DirectoryInfo = DirectoryInfo(lib_path)
-    all_parts_net = library_path_net.EnumerateFiles("*", SearchOption.AllDirectories)
-    for p in all_parts_net:
-        fn = Path(p.FullName)
-        ldrawfile = LDrawFile(fn)
-        vfiles[ldrawfile.name] = ldrawfile
-        vfiles[ldrawfile.pname] = ldrawfile
-```
-
-### Fetch from the virtual file system
-
-``` py : <<method to get LDrawFile instance>>=
-def get_ldraw_file(part_name : str) -> LDrawFile:
-    global vfiles
-
-    part_name = part_name.replace('/', '\\')
-
-    if part_name in vfiles:
-        return vfiles[part_name]
-
-    raise Exception(f"Part file not found: {part_name}")
-```
-
-### Add a virtual file to the virtual file system
-
-``` py : <<method to add a virtual file>>=
-def add_virtual_file(model : Path, filename : str, data : List[str]):
-    virtual_file_path = model.parent / 'virtual' / filename
-    virtual_file = LDrawFile(virtual_file_path, data)
-    vfiles[virtual_file.name] = virtual_file
-    vfiles[virtual_file.pname] = virtual_file
-```
-
-### Preparing the instance definition map
-
-``` py : <<method to prepare instance definitions>>=
-def prepare_idefs_dictionary():
-    for idef in sc.doc.InstanceDefinitions:
-        idefs[idef.Name] = idef
-```
-
-### Update the instance definition map
-
-``` py : <<method to update instance definitions>>=
-def update_idefs_dictionary(part_name):
-    idef_part_name = clean_name(part_name)
-    idef = sc.doc.InstanceDefinitions.Find(idef_part_name)
-    if idef:
-        idefs[idef_part_name] = idef
-        return idef
-    return None
-```
-
-### Fetching instance definition
-
-``` py : <<method to get InstanceDefinition instance>>=
-def get_part_idef(prt):
-    p = Path(prt)
-    pname = clean_name(p.name)
-    if pname in idefs:
-        return idefs[pname]
-
-    return None
 ```
 
 ### Reading color definitions
@@ -302,22 +204,11 @@ class LDrawMaterial:
 
 ```
 
-The content GUID used to create Physically Based Material instances is
-short-handed in `pbr_guid`.
-
 ``` py : <<initialize global variables>>=+
 pbr_guid = ContentUuids.PhysicallyBasedMaterialType
 ```
 
-## Virtual file system
-
-The importer uses a simple virtual file system. It is really not more than a
-mapping of file names to `LDrawFile` instances. For physical files on the actual
-file system they will be initialized with a full path to a file. But there are
-also virtual files that we insert into the system so we can make the access to
-either file type simple and look the same.
-
-### Reading files
+## Reading files
 
 All LDraw files consist of lines where each line is of a certain line type. Each
 line type denotes a command. All LDraw files have these line types, so it is
@@ -332,8 +223,6 @@ to define geometry of parts and subparts. The `.ldr` files often contain
 commands to load parts, they express assemblies or models. The `.mpd` is a form
 of multi-part document, where in one file several files are combined.
 
-### LDrawFile class
-
 In our script we represent LDraw files with the class `LDrawFile`. The class
 itself is very simple. It has only a method for
 `<<initialization of LDrawFile>>` and a method to
@@ -343,8 +232,25 @@ itself is very simple. It has only a method for
 class LDrawFile:
     <<initialization of LDrawFile>>
     <<get commands from LDrawFile>>
-    <<method to determine if LDrawFile contains poly commands>>
 
+    def __repr__(self):
+        if self.is_3dm():
+            return f"LDrawFile '{self.name}', a Rhino 3d file."
+        else:
+            return f"LDrawFile '{self.name}', {len(self.get_commands())} commands."
+
+    def is_ccw_winding(self):
+        if self.is_3dm():
+            return
+        cmds = self.get_commands()
+        for cmd in cmds:
+            if cmd.startswith('0') and 'BFC' in cmd and 'CCW' in cmd:
+                return True
+
+        return False
+
+    def is_3dm(self):
+        return self.suffix == '.3dm'
 ```
 
 Instantiation of an `LDrawFile` instance takes a required parameter `path`. From
@@ -361,6 +267,7 @@ def __init__(self, path : Path, data : List[str] = []):
     self.name = path.name
     self.suffix = path.suffix
     self.pname = f"{path.parent.name}\\{self.name}"
+    self.ppname = f"{path.parent.parent.name}\\{path.parent.name}\\{self.name}"
 ```
 
 For most files the contents will not be known in advance. When retrieving the
@@ -374,24 +281,13 @@ Reading of the file also strips already out empty lines.
 
 ``` py : <<get commands from LDrawFile>>=
 def get_commands(self):
-    if len(self.commands)==0:
+    if len(self.commands)==0 and not self.is_3dm():
         with self.path.open(encoding="utf-8") as f:
             cmds = [l.strip() for l in f.readlines()]
             cmds = [c for c in cmds if len(c) > 0]
             self.commands = cmds
 
     return self.commands
-```
-
-``` py : <<method to determine if LDrawFile contains poly commands>>=
-def contains_poly_commands(self):
-    cmds = self.get_commands()
-    for cmd in cmds:
-        if len(cmd) == 0: continue
-        if cmd[0] in ("2", "3", "4", "5"):
-            return True
-
-    return False
 ```
 
 ## Line types
@@ -406,7 +302,7 @@ definition language. Eventually we may want to include also 2 and 5 lines, but
 for just importing complete models for set dressing and rendering purposes this
 should get us going.
 
-Line types 3 and 4 method to add a polygons, triangles and quads respectively.
+Line types 3 and 4 add polygon methods, triangles and quads respectively.
 
 ## Adding polygons
 
@@ -452,33 +348,49 @@ With all numbers parsed we can add them as vertices to the mesh, increasing the
 `vertidx` count for each item.
 
 ``` py : <<add vertices to mesh>>=
+vidxs = list()
 for i in range(0, elements, stride):
     V = apply_transforms(d[i:i+stride], xforms)
     m.Vertices.Add(*V)
-    vertidx = vertidx + 1
+    vidxs.append(vertidx)
+    vertidx += 1
+
+if len(vidxs) == 4 and from_winding == winding:
+    #print(f"A: {vidxs}")
+    rev = vidxs[1:]
+    rev.reverse()
+    vidxs = [vidxs[0]] + rev
+    #print(f"B: {vidxs}")
 ```
 
-With all vertices added and `vertidx` adjusted we can now add the face
-definition for either the triangle or the quad.
+With all vertices added and `vertidx` adjusted we can now add the face definition for either the triangle or the quad.
 
 ``` py : <<add face to mesh>>=
+
 if vertices == 4:
-    m.Faces.AddFace(vertidx - 4, vertidx - 3, vertidx - 2, vertidx - 1)
+    mf = MeshFace(vidxs[0], vidxs[1], vidxs[2], vidxs[3])
 elif vertices == 3:
-    m.Faces.AddFace(vertidx - 3, vertidx - 2, vertidx - 1)
+    mf = MeshFace(vidxs[0], vidxs[1], vidxs[2])
+if from_winding != winding and False:
+    #print(f"\tFlipping {mf.ToString()}")
+    mf = mf.Flip()
+    #print(f"\t\tFlipped {mf.ToString()}")
+m.Faces.AddFace(mf)
+
 ```
 
 To bring it all together we can say that to add a polygon from a command string
 we first `<<parse vertex count>>` and `<<parse vertices>>`, then
 `<<add vertices to mesh>>` followed by the final step `<<add face to mesh>>`.
 
-``` py : <<method to add a polygon>>=
-def add_poly(m : Mesh, cmd : str, xforms : list):
+``` py : <<add polygon method>>=
+def add_poly(m : Mesh, cmd : str, xforms : list, from_winding = Winding.CCW, winding = Winding.CCW):
     global vertidx
     stride = 3
     start = 2
     <<parse vertex count>>
     <<parse vertices>>
+    #print(f"Add poly with {vertices} vertices with from_winding {from_winding} -> winding {winding}")
     <<add vertices to mesh>>
     <<add face to mesh>>
 ```
@@ -489,7 +401,7 @@ def add_poly(m : Mesh, cmd : str, xforms : list):
 flowchart
     A[Model]
     B[Assembly]
-    C[Geometry]
+    C[Part]
 
     A --> B
     B --> B
@@ -497,186 +409,58 @@ flowchart
     C --> C
 ```
 
-``` py : <<method to load a complete model>>=
-def load_model(model : LDrawFile):
-    lines = model.get_commands()
+## TO BE WRITTEN AS LITERATE PROGRAM
 
-    FILE_START = '0 FILE '
-    first_file = ''
-    if model.suffix.lower() == '.mpd':
-        # parse file into virtual, read files
-        cur_file = ''
-        file_data = []
-        for l in lines:
-            if l.startswith(FILE_START):
-                if cur_file != '':
-                    add_virtual_file(model.path, cur_file, file_data)
-                if cur_file == '':
-                    first_file = l[len(FILE_START):]
-                cur_file = l[len(FILE_START):]
-                file_data = [l]
-            else:
-                file_data.append(l)
-        add_virtual_file(model.path, cur_file, file_data) # last file
-    start_part = get_ldraw_file(first_file)
+``` py : <<the whole script.*>>= ./src/rhildraw.py $ template=pysrc.template
+import traceback
+import sys
+import scriptcontext as sc
+import math
 
-    load_assembly(start_part, [rhino_orient])
-```
+from typing import Mapping, List
 
-### Loading assembly
+import Rhino
 
-``` py : <<method to load an assembly>>=
-def load_assembly(part : LDrawFile, xforms : list):
-    cmds = []
-    cmds = part.get_commands()
+from Rhino.Geometry import Transform, Mesh, Vector3f, Point3f, MeshFace
+from Rhino.Display import Color4f
+from Rhino.DocObjects import ObjectAttributes, ObjectMaterialSource
+from Rhino.DocObjects import InstanceDefinition
+from Rhino.Render import ChildSlotNames, ContentUuids, RenderContentType
 
-    cmds = [l for l in cmds if len(l)>0]
-    for cmd in cmds:
-        if cmd.startswith('1'):
-            d = cmd.split()
-            color_code = d[1]
-            materials[color_code].create_render_material()
-            rm = materials[color_code].render_material
-            xform = LDrawXform(cmd)
-            prt = ' '.join(d[14:])
-            _xforms = xforms[:] + [xform]
+PbrNames = ChildSlotNames.PhysicallyBased
+rhmath = Rhino.RhinoMath
 
-            obattr = ObjectAttributes()
-            obattr.Name = clean_name(prt)
-            obattr.Visible = True
-            obattr.MaterialSource = ObjectMaterialSource.MaterialFromObject
-            obattr.RenderMaterial = rm
+from System.IO import DirectoryInfo, Directory, File, FileInfo
+from System.IO import EnumerationOptions, SearchOption
 
-            if prt.lower().endswith(".ldr"):
-                ldr_file = get_ldraw_file(prt)
-                if ldr_file.contains_poly_commands():
-                    add_geometry(prt)
-                    idef = update_idefs_dictionary(prt)
-                    if idef != None:
-                        xform = collate_transforms(_xforms)
-                        sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
-                    else:
-                        print(f"Couldn't add part {prt}")
-                else:
-                    load_assembly(ldr_file, _xforms)
-            else:
-                idef = get_part_idef(prt)
-                xform = collate_transforms(_xforms)
-                if idef != None:
-                    sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
-                else:
-                    add_geometry(prt)
-                    idef = update_idefs_dictionary(prt)
-                    if idef != None:
-                        sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
-                    else:
-                        print(f"Failed to add part {prt}")
+from pathlib import Path
+from enum import Enum
 
-            refresh(zoom_extents)
-```
+class Winding(Enum):
+    CW = 1
+    CCW = 2
 
-### Loading geometry
+    def is_ccw(self):
+        return self == Winding.CCW
+        #return self.value == 2
 
-Actual geometry data is recorded in the `.dat` files. As all files they can
-reference other files, the assumption is made that only `.dat` files are
-referenced from `.dat` files. Also the assumption is that no `.dat` file has
-been generated that references itself. That would currently lead to an infinite
-loop, so something to improve on in the future.
+    def is_cw(self):
+        return self == Winding.CW
+        # return self.value == 1
 
-For `.dat` files we'll look only at line type 1, 3 and 4. When seeing a line
-type 1 we'll find the `LDrawFile` specified by the command and recurse into
-`load_geometry_from_file` to load that part.
+    def flip(self):
+        return Winding.CW if self == Winding.CCW else Winding.CCW
 
-Line types 3 and 4 will be passed on to the `<<method to add a polygon>>`.
+<<LDrawFile class>>
+<<LDraw material class>>
 
-All these methods will be adding to the same `Mesh` instance.
+<<initialize global variables>>
 
-The entry-point for adding geometry is really the `add_geometry` method, which
-is given only the part name. If an existing instance definition with the cleaned
-name is found that will be used with an early exit out of the method.
+def refresh():
+    sc.doc.Views.Redraw()
+    Rhino.RhinoApp.Wait()
 
-``` py : <<methods to load geometry>>=
-def load_geomety_from_file(part : LDrawFile, m : Mesh, xforms : list):
-    cmds = part.get_commands()
-    for cmd in cmds:
-        if cmd.startswith('1'):
-            d = cmd.split()
-            xform = LDrawXform(cmd)
-            prt = ' '.join(d[14:])
-            _xforms = [xform] + xforms[:]
-            try:
-                part_file = get_ldraw_file(prt)
-            except Exception:
-                print(f"\tERR: Failed getting part {prt}, skipping")
-                continue
-            load_geomety_from_file(part_file, m, _xforms)
-        elif cmd.startswith('3') or cmd.startswith('4'):
-            add_poly(m, cmd, xforms)
-
-
-def add_geometry(part_name : str):
-    global vertidx
-    vertidx = 0
-    name = clean_name(part_name)
-
-    existing_idef = sc.doc.InstanceDefinitions.Find(name)
-    if existing_idef:
-        print(f"\tSkipping {part_name}, instance already created")
-        return
-    tmesh = Mesh()
-    mesh = Mesh()
-    obattr = ObjectAttributes()
-
-    obattr.Name = name
-    obattr.Visible = True
-    obattr.MaterialSource = ObjectMaterialSource.MaterialFromParent
-
-    ldraw_file = get_ldraw_file(part_name)
-    load_geomety_from_file(ldraw_file, tmesh, [id_xform])
-    tmesh.Normals.ComputeNormals()
-    tmesh.Compact()
-
-    <<weld mesh data>>
-
-    if mesh.Vertices.Count > 0 and mesh.Faces.Count > 0:
-        sc.doc.InstanceDefinitions.Add(obattr.Name, "", Point3f.Origin, mesh, obattr)
-
-```
-
-#### Welding geometry
-
-Next to actually reading in the geometry data and constructing a mesh out of it
-the `add_geometry` commanda also does `<<weld mesh data>>`. The geometry defined
-in `.dat` files is typically fairly coarse and does not include information
-about normals. Doing a double step of first welding disjoin mesh parts, then
-welding again with all the pieces put back together again gives relatively good
-looking pieces in most cases.
-
-``` py : <<weld mesh data>>=
-meshes = tmesh.SplitDisjointPieces()
-for submesh in meshes:
-    submesh.Weld(rhmath.ToRadians(60))
-    submesh.UnifyNormals()
-    mesh.Append(submesh)
-mesh.Weld(rhmath.ToRadians(60))
-mesh.Compact()
-```
-
-Be mindful though that this won't always work with every part geometry. For
-instance minifig heads won't necessarily look always great. It all depends on
-how the geometry was encoded in the `.dat` file.
-
-### LDrawXform class
-
-The `LDrawXform` class is a simple helper class to handle conversion from the
-`LDraw` transformation encoding in line types to `Rhino.Geometry.Transform` and
-use those to apply the transforms expressed in a model and related files.
-
-The main point is that the X, Y, Z coordinates of a command go in the right-most
-column of a Rhino transform.
-
-``` py : <<LDrawXform class>>=
-class LDrawXform:
+class LegoXform:
     def __init__(self, data : str):
         data = data.strip()
         if len(data) > 0:
@@ -724,7 +508,8 @@ class LDrawXform:
     def get_xform(self):
         return self.xform
 
-rhino_orient = LDrawXform("")
+
+rhino_orient = LegoXform("")
 rhino_orient.set_xform(
     Transform.Rotation(
         rhmath.ToRadians(-90.0),
@@ -732,7 +517,46 @@ rhino_orient.set_xform(
         Point3f.Origin
     )
 )
-id_xform = LDrawXform("")
+id_xform = LegoXform("")
+
+def clean_name(part_name):
+    part_name = part_name.removesuffix(".dat")
+    part_name = part_name.removesuffix(".DAT")
+    part_name = part_name.removesuffix(".ldr")
+    part_name = part_name.removesuffix(".LDR")
+    return part_name
+
+def prepare_parts_dictionary():
+    global lib_path, vfiles
+    library_path : Path = Path(lib_path)
+    library_path_net : DirectoryInfo = DirectoryInfo(lib_path)
+    all_parts_net = library_path_net.EnumerateFiles("*", SearchOption.AllDirectories)
+    for p in all_parts_net:
+        fn = Path(p.FullName)
+        if fn.suffix.lower() in ('.txt', '.zip', '.exe', '.DS_Store'):
+            continue
+
+        if len(fn.suffix) > 0 and fn.suffix.lower() in ('.3dm'):
+            print(f'Adding {fn}')
+
+        ldrawfile = LDrawFile(fn)
+        vfiles[ldrawfile.name] = ldrawfile
+        vfiles[ldrawfile.pname] = ldrawfile
+
+        if ldrawfile.is_3dm():
+            print(f'\t{ldrawfile} .. [{ldrawfile.name}] :: {vfiles[ldrawfile.name]}')
+
+def prepare_idefs_dictionary():
+    for idef in sc.doc.InstanceDefinitions:
+        idefs[idef.Name] = idef
+
+def update_idefs_dictionary(part_name):
+    idef_part_name = clean_name(part_name)
+    idef = sc.doc.InstanceDefinitions.Find(idef_part_name)
+    if idef:
+        idefs[idef_part_name] = idef
+        return idef
+    return None
 
 def apply_transforms(v, xforms):
     for xform in xforms:
@@ -745,79 +569,261 @@ def collate_transforms(xforms):
        xform = xform * _xform.get_xform()
 
    return xform
-```
 
-`LDraw` files are created with the Y axis up, so we have a `rhino_orient`
-transform that will be given to the top `<<method to load a complete model>>` so
-that the end result will be rotated properly to the Rhino Z-axis up world.
+<<add polygon method>>
 
-## Misc helper methods
+first_time = True
+def get_ldraw_file(part_name : str) -> LDrawFile:
+    global vfiles, first_time
 
-``` py : <<misc helper methods>>=
-def refresh(zoom_extents = False):
-    sc.doc.Views.Redraw()
-    if zoom_extents:
-        Rhino.RhinoApp.RunScript("ZEA", False)
-    Rhino.RhinoApp.Wait()
+    part_name = part_name.replace('/', '\\')
 
-def clean_name(part_name):
-    part_name = part_name.removesuffix(".dat")
-    part_name = part_name.removesuffix(".DAT")
-    part_name = part_name.removesuffix(".ldr")
-    part_name = part_name.removesuffix(".LDR")
-    return part_name
-```
+    part_3dm = Path(part_name).with_suffix('.3dm').name
 
-## Pulling all parts together
+    print(f"...searching for [{part_3dm}]")
 
-``` py : <<the whole script.*>>= ./src/rhildraw.py $ template=pysrc.template
-import scriptcontext as sc
-import math
+    if "springMesh" in part_3dm:
+        pass
 
-from typing import Mapping, List
+    if part_3dm in vfiles.keys():
+        print(f"\t found {part_3dm}")
+        return vfiles[part_3dm]
 
-import Rhino
+    if part_name in vfiles.keys():
+        return vfiles[part_name]
 
-from Rhino.Geometry import Transform, Mesh, Vector3f, Point3f
-from Rhino.Display import Color4f
-from Rhino.DocObjects import ObjectAttributes, ObjectMaterialSource
-from Rhino.DocObjects import InstanceDefinition
-from Rhino.Render import ChildSlotNames, ContentUuids, RenderContentType
+    raise Exception(f"Part file not found: {part_name}")
 
-PbrNames = ChildSlotNames.PhysicallyBased
-rhmath = Rhino.RhinoMath
 
-from System.IO import DirectoryInfo, Directory, File, FileInfo
-from System.IO import EnumerationOptions, SearchOption
+def load_part(part : LDrawFile, m : Mesh, xforms : list, override_invert_faces = False):
+    cmds = part.get_commands()
+    invert_faces = False
+    direction = Winding.CCW if part.is_ccw_winding() else Winding.CW
+    if part.is_ccw_winding() and not override_invert_faces:
+        invert_faces = True
+    elif part.is_ccw_winding() and override_invert_faces:
+        invert_faces = False
+    elif override_invert_faces and not part.is_ccw_winding():
+        invert_faces = True
 
-from pathlib import Path
+    #print(f"load_part {part.ppname}, {direction}, {override_invert_faces}. {invert_faces}")
 
-<<LDrawFile class>>
-<<LDraw material class>>
-<<LDrawXform class>>
+    invert_next = False
+    for cmd in cmds:
+        if is_invert_cmd(cmd):
+            #print(f"\tInverting next cmd")
+            invert_next = True
+            continue
+        if cmd.startswith('1'):
+            d = cmd.split()
+            xform = LegoXform(cmd)
+            prt = ' '.join(d[14:])
+            _xforms = [xform] + xforms[:]
+            try:
+                part_file = get_ldraw_file(prt)
+            except Exception:
+                print(f"\tERR: Failed getting part {prt}, skipping")
+                continue
+            load_part(part_file, m, _xforms, invert_next)
+        elif cmd.startswith('3') or cmd.startswith('4'):
+            direction_to_use = direction
+            if override_invert_faces:
+                direction_to_use = direction.flip()
+            add_poly(m, cmd, xforms, direction, direction.flip() if override_invert_faces else direction) # DEBUG, not invert_faces if invert_next else invert_faces)
+        invert_next = False
 
-<<initialize global variables>>
+def get_part_idef(prt):
+    p = Path(prt)
+    pname = clean_name(p.name)
+    if pname in idefs:
+        return idefs[pname]
 
-<<misc helper methods>>
+    return None
 
-<<method to prepare virtual files>>
-<<method to add a virtual file>>
+def is_invert_cmd(cmd):
+    return cmd.startswith('0') and 'BFC' in cmd and 'INVERTNEXT' in cmd
 
-<<method to prepare instance definitions>>
-<<method to update instance definitions>>
-<<method to get InstanceDefinition instance>>
-<<method to get LDrawFile instance>>
+def contains_poly_commands(cmds):
+    for cmd in cmds:
+        if len(cmd) == 0: continue
+        if cmd[0] in ("2", "3", "4", "5"):
+            return True
 
-<<method to add a polygon>>
-<<methods to load geometry>>
-<<method to load an assembly>>
-<<method to load a complete model>>
+    return False
+
+def blockinstance_for_idef(prt, _xforms, obattr, override_invert_faces=False):
+    idef = get_part_idef(prt)
+    xform = collate_transforms(_xforms)
+    if idef == None:
+        add_part(prt, override_invert_faces)
+        idef = update_idefs_dictionary(prt)
+    if idef != None:
+        sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
+    else:
+        print(f"Failed to add part {prt}")
+
+def load_model_part(part : LDrawFile, xforms : list, override_invert_faces = False):
+    cmds = []
+    cmds = part.get_commands()
+
+    direction = Winding.CW
+    flipped = False
+
+    cmds = [l for l in cmds if len(l)>0]
+    if part.is_ccw_winding():
+        #print(f"BFC CCW detected")
+        direction = Winding.CCW
+
+    for cmd in cmds:
+
+        if is_invert_cmd(cmd):
+            #print(f"BFC INVERTNEXT detected setting direction {direction} to {not direction}")
+            direction = not direction
+            override_invert_faces = True
+            flipped = True
+            continue
+        if cmd.startswith('1'):
+            d = cmd.split()
+            color_code = d[1]
+            materials[color_code].create_render_material()
+            rm = materials[color_code].render_material
+            xform = LegoXform(cmd)
+            prt = ' '.join(d[14:])
+            _xforms = xforms[:] + [xform]
+
+            obattr = ObjectAttributes()
+            obattr.Name = clean_name(prt)
+            obattr.Visible = True
+            obattr.MaterialSource = ObjectMaterialSource.MaterialFromObject
+            obattr.RenderMaterial = rm
+
+            if prt.lower().endswith(".ldr"):
+                ldr_file = get_ldraw_file(prt)
+                if contains_poly_commands(ldr_file.get_commands()):
+                    add_part(prt, override_invert_faces)
+                    idef = update_idefs_dictionary(prt)
+                    if idef != None:
+                        xform = collate_transforms(_xforms)
+                        sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
+                    else:
+                        print(f"Couldn't add part {prt}")
+                elif ldr_file.is_3dm():
+                    blockinstance_for_idef(prt, _xforms, obattr, override_invert_faces)
+                else:
+                    load_model_part(ldr_file, _xforms, override_invert_faces)
+            else:
+                blockinstance_for_idef(prt, _xforms, obattr, override_invert_faces)
+                """
+                idef = get_part_idef(prt)
+                xform = collate_transforms(_xforms)
+                if idef == None:
+                    add_part(prt, override_invert_faces)
+                    idef = update_idefs_dictionary(prt)
+                if idef != None:
+                    sc.doc.Objects.AddInstanceObject(idef.Index, xform, obattr)
+                else:
+                    print(f"Failed to add part {prt}")
+                """
+
+            # flip reset
+            if flipped:
+                #print(f"BFC INVERTNEXT done, setting direction {direction} to {not direction}")
+                direction = not direction
+                flipped = False
+            refresh()
+
+def add_virtual_file(model : Path, filename : str, data : List[str]):
+    global vfiles
+    virtual_file_path = model.parent / 'virtual' / filename
+    virtual_file = LDrawFile(virtual_file_path, data)
+    vfiles[virtual_file.name] = virtual_file
+    vfiles[virtual_file.pname] = virtual_file
+
+
+def load_model(model : LDrawFile):
+    lines = model.get_commands()
+
+    FILE_START = '0 FILE '
+    first_file = ''
+    if model.suffix.lower() == '.mpd':
+        # parse file into virtual, read files
+        cur_file = ''
+        file_data = []
+        for l in lines:
+            if l.startswith(FILE_START):
+                if cur_file != '':
+                    add_virtual_file(model.path, cur_file, file_data)
+                if cur_file == '':
+                    first_file = l[len(FILE_START):]
+                cur_file = l[len(FILE_START):]
+                file_data = [l]
+            else:
+                file_data.append(l)
+        add_virtual_file(model.path, cur_file, file_data) # last file
+    elif model.suffix.lower() == '.ldr':
+        first_file = model.name
+    start_part = get_ldraw_file(first_file)
+
+    load_model_part(start_part, [rhino_orient])
+
+
+def add_part(part_name : str, invert_faces = False):
+    global vertidx
+    vertidx = 0
+    name = clean_name(part_name)
+
+    print(f"adding part {part_name} ({name})")
+
+    existing_idef = sc.doc.InstanceDefinitions.Find(name)
+    if existing_idef:
+        print(f"\tSkipping {part_name}, instance already created")
+        return
+    else:
+        pass #print(f"\tLoading [{part_name}]")
+
+    ldraw_file = get_ldraw_file(part_name)
+
+    if ldraw_file.is_3dm():
+        print(f"... reading 3dm file {ldraw_file.path}")
+        f3dm = Rhino.FileIO.File3dm.Read(f'{ldraw_file.path}')
+        obs_to_add = list()
+        attrs_to_add = list()
+        for ob in f3dm.Objects:
+            if ob.Geometry.ObjectType == Rhino.DocObjects.ObjectType.InstanceReference:
+                continue
+            obs_to_add.append(ob.Geometry)
+            attrs_to_add.append(ob.Attributes)
+
+        obattr = ObjectAttributes()
+        obattr.Name = name
+        obattr.Visible = True
+        obattr.MaterialSource = ObjectMaterialSource.MaterialFromParent
+        print(sc.doc.InstanceDefinitions.Add(
+            f'{name}',
+            f'High-definition Rhino version of {name}.',
+            Rhino.Geometry.Point3d.Origin,
+            obs_to_add,
+            attrs_to_add
+        ))
+        f3dm.Dispose()
+    else:
+        mesh = Mesh()
+        obattr = ObjectAttributes()
+
+        obattr.Name = name
+        obattr.Visible = True
+        obattr.MaterialSource = ObjectMaterialSource.MaterialFromParent
+
+        load_part(ldraw_file, mesh, [id_xform], invert_faces)
+        mesh.Weld(math.radians(50))
+        mesh.Normals.ComputeNormals()
+        mesh.Compact()
+
+        if mesh.Vertices.Count > 0 and mesh.Faces.Count > 0:
+            sc.doc.InstanceDefinitions.Add(obattr.Name, "", Point3f.Origin, mesh, obattr)
 
 <<initialize color definitions>>
 
-# If you want to see the model "build" while
-# the script imports comment the following line
-# out, or set every False to True
 #sc.doc.Views.EnableRedraw(False, False, False)
 
 ###########################################
@@ -827,23 +833,38 @@ from pathlib import Path
 ## Use always forward slashes, also for
 ## folders on Windows
 ###########################################
-#lib_path = "/Users/jesterking/Documents/brickdat/ldraw"
-lib_path = "e:/dev/brickdat/ldraw"
+lib_path = "/Users/jesterking/Documents/brickdat/ldraw"
+#lib_path = "e:/dev/brickdat/ldraw"
 
 prepare_parts_dictionary()
 prepare_idefs_dictionary()
 load_colors()
 
-zoom_extents = True # Set to True to always see the whole model during import
+
+#fl : Path = vfiles["885-1.mpd"]
+#fl : Path = vfiles["8836-1.mpd"]
+#fl : Path = vfiles["10019-1.mpd"]
+#fl : Path = vfiles["10030-1.mpd"]
+#fl : Path = vfiles["10143-1.mpd"]
+#fl : Path = vfiles["75969-1.mpd"]
+#fl : Path = vfiles["31048-1.mpd"]
+#fl : Path = vfiles["3063-1.mpd"]
+fl : Path = vfiles["42064-1.mpd"]
+
 
 ###########################################
 ## Specify what model to load. Use just the
 ## file name (including extension)
 ###########################################
-fl : Path = vfiles["10030-1.mpd"]
+#fl : Path = vfiles["tester.mpd"]
+#fl : Path = vfiles["pyramid.ldr"]
+#fl : Path = vfiles["10019-1.mpd"]
+fl : Path = vfiles["8836-1.mpd"]
+#fl : Path = vfiles["885-1.mpd"]
+
 load_model(fl)
 
-refresh(zoom_extents)
+refresh()
 
 sc.doc.Views.EnableRedraw(True, True, True)
 
@@ -852,3 +873,5 @@ Rhino.RhinoApp.RunScript("ZEA", False)
 print("Done")
 
 ```
+
+
